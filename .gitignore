@@ -1,0 +1,75 @@
+# ========================
+# Build & Dependencies
+# ========================
+node_modules/
+server/node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ========================
+# Logs
+# ========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ========================
+# Environment Variables (RAHASIA - jangan di-push!)
+# ========================
+.env
+.env.*
+!.env.example
+
+# ========================
+# Python
+# ========================
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.Python
+
+# ========================
+# Upload folder (file video user - bisa sangat besar!)
+# ========================
+server/uploads/
+
+# ========================
+# Database JSON (data lokal, tidak perlu di-push)
+# ========================
+server/db.json
+
+# ========================
+# AI Model file (6.8MB - terlalu besar untuk GitHub gratis)
+# ========================
+*.pt
+*.onnx
+*.weights
+
+# ========================
+# Editor & OS
+# ========================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ========================
+# Coverage & Testing
+# ========================
+coverage/
+.nyc_output/

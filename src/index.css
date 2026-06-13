@@ -1,0 +1,219 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Bright white-green golf identity */
+    --background: 130 50% 99%;          /* #F8FFF8 */
+    --foreground: 215 35% 17%;          /* #1E293B */
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 35% 17%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 35% 17%;
+
+    --primary: 142 70% 32%;             /* #178A45 fresh golf green */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 138 60% 95%;           /* #EFFAF1 light green surface */
+    --secondary-foreground: 145 75% 20%;
+
+    --muted: 138 50% 96%;
+    --muted-foreground: 215 16% 47%;    /* #64748B */
+
+    --accent: 138 100% 94%;             /* #DFFFE8 mint accent */
+    --accent-foreground: 145 75% 20%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 138 45% 89%;              /* #DCEFE2 */
+    --input: 138 45% 92%;
+    --ring: 142 70% 32%;
+
+    --radius: 0.875rem;
+
+    --golf-green: 142 70% 32%;          /* Primary green */
+    --golf-deep: 142 80% 20%;           /* #0B5D2A deep emerald */
+    --golf-mint: 138 100% 94%;          /* Mint */
+    --golf-surface: 138 60% 95%;        /* Light green surface */
+    --golf-lime: 90 70% 50%;            /* Lime accent */
+    --golf-gold: 43 80% 47%;            /* #D4A017 muted gold for premium */
+    --golf-gold-light: 43 80% 60%;
+    --golf-emerald: 145 75% 25%;
+    --golf-grass: 110 50% 45%;
+    --golf-text-dark: 215 35% 17%;
+    --golf-surface-hover: 138 60% 90%;
+
+    --sidebar-background: 142 80% 14%;     /* deep emerald sidebar */
+    --sidebar-foreground: 138 40% 92%;
+    --sidebar-primary: 43 80% 55%;
+    --sidebar-primary-foreground: 142 80% 12%;
+    --sidebar-accent: 142 60% 22%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 142 50% 20%;
+    --sidebar-ring: 43 80% 55%;
+
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at 100% 0%, hsl(var(--golf-mint) / 0.6) 0%, transparent 35%),
+      radial-gradient(circle at 0% 100%, hsl(var(--golf-surface) / 0.8) 0%, transparent 40%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Oswald', system-ui, sans-serif;
+    @apply tracking-tight;
+  }
+}
+
+@layer components {
+  .golf-gradient {
+    background: linear-gradient(135deg, hsl(var(--golf-deep)) 0%, hsl(var(--golf-green)) 50%, hsl(var(--golf-emerald)) 100%);
+  }
+
+  .golf-gradient-gold {
+    background: linear-gradient(135deg, hsl(43, 85%, 50%) 0%, hsl(43, 90%, 60%) 50%, hsl(40, 75%, 45%) 100%);
+  }
+
+  .golf-gradient-green {
+    background: linear-gradient(135deg, hsl(var(--golf-green)) 0%, hsl(var(--golf-emerald)) 100%);
+  }
+
+  .golf-gradient-hero {
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, hsl(var(--golf-mint)) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 100% 50%, hsl(var(--golf-surface)) 0%, transparent 60%),
+      linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(var(--background)) 100%);
+  }
+
+  .golf-glass {
+    @apply bg-white/80 backdrop-blur-xl border border-border;
+  }
+
+  .golf-card {
+    @apply bg-card border border-border rounded-2xl p-6 shadow-[0_2px_12px_-4px_hsl(var(--golf-green)/0.08)] transition-all duration-300 hover:border-primary/40 hover:shadow-[0_8px_30px_-8px_hsl(var(--golf-green)/0.18)];
+  }
+
+  .golf-card-glow {
+    @apply golf-card shadow-[0_8px_40px_-10px_hsl(var(--golf-green)/0.25)];
+  }
+
+  .golf-card-mint {
+    @apply rounded-2xl p-6 border border-border transition-all duration-300;
+    background: linear-gradient(135deg, hsl(var(--golf-mint) / 0.8) 0%, hsl(0 0% 100%) 100%);
+  }
+
+  .golf-badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider;
+  }
+
+  .golf-badge-gold {
+    @apply golf-badge text-white;
+    background: linear-gradient(135deg, hsl(var(--golf-gold)) 0%, hsl(var(--golf-gold-light)) 100%);
+  }
+
+  .golf-badge-green {
+    @apply golf-badge bg-accent text-accent-foreground border border-primary/20;
+  }
+
+  .golf-stat-card {
+    @apply golf-card flex flex-col gap-2;
+  }
+
+  .golf-input {
+    @apply bg-white border border-border rounded-lg px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all;
+  }
+
+  .golf-btn-primary {
+    @apply golf-gradient-green text-white font-semibold px-6 py-3 rounded-lg transition-all duration-300 hover:shadow-[0_8px_24px_-6px_hsl(var(--golf-green)/0.5)] hover:-translate-y-0.5 active:scale-[0.98];
+  }
+
+  .golf-btn-secondary {
+    @apply bg-white text-primary font-semibold px-6 py-3 rounded-lg border-2 border-primary/20 transition-all duration-300 hover:bg-secondary hover:border-primary/50 active:scale-[0.98];
+  }
+
+  .golf-btn-ghost {
+    @apply text-foreground font-medium px-4 py-2 rounded-lg transition-all duration-300 hover:bg-secondary active:scale-[0.98];
+  }
+
+  .golf-section-title {
+    font-family: 'Oswald', system-ui, sans-serif;
+    @apply text-3xl md:text-5xl font-bold uppercase tracking-tight text-foreground;
+  }
+
+  .golf-label {
+    @apply text-xs uppercase tracking-widest text-muted-foreground font-semibold;
+  }
+
+  .golf-progress-bar {
+    @apply h-2 bg-secondary rounded-full overflow-hidden;
+  }
+
+  .golf-progress-fill {
+    @apply h-full rounded-full golf-gradient-green transition-all duration-700;
+  }
+
+  .golf-table-header {
+    @apply text-xs uppercase tracking-widest text-muted-foreground font-semibold border-b border-border pb-3;
+  }
+
+  .golf-rank-badge {
+    @apply w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold;
+  }
+
+  /* Decorative golf course curved fairway */
+  .golf-fairway::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 70% 40% at 50% 100%, hsl(var(--golf-green) / 0.15) 0%, transparent 60%);
+    pointer-events: none;
+  }
+}
+
+@layer utilities {
+  .text-gold {
+    color: hsl(var(--golf-gold));
+  }
+
+  .text-green-brand {
+    color: hsl(var(--golf-green));
+  }
+
+  .text-emerald-deep {
+    color: hsl(var(--golf-deep));
+  }
+
+  .bg-golf-surface {
+    background-color: hsl(var(--golf-surface));
+  }
+
+  .bg-golf-mint {
+    background-color: hsl(var(--golf-mint));
+  }
+
+  .bg-golf-surface-hover {
+    background-color: hsl(var(--golf-surface-hover));
+  }
+
+  /* Subtle dotted golf-ball pattern */
+  .bg-golf-dots {
+    background-image: radial-gradient(hsl(var(--golf-green) / 0.08) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+}

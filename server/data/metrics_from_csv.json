@@ -1,0 +1,100 @@
+{
+  "accuracy": 0.4928571428571429,
+  "macro_precision": 0.24076578677362184,
+  "macro_recall": 0.2603546910755149,
+  "macro_f1": 0.24373311276537085,
+  "per_class": {
+    "driver": {
+      "precision": 0.7284768211920529,
+      "recall": 0.5789473684210527,
+      "f1": 0.6451612903225806,
+      "support": 190
+    },
+    "fairway": {
+      "precision": 0.25,
+      "recall": 0.375,
+      "f1": 0.3,
+      "support": 32
+    },
+    "hybrid": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 7
+    },
+    "iron": {
+      "precision": 0.22535211267605634,
+      "recall": 0.34782608695652173,
+      "f1": 0.27350427350427353,
+      "support": 46
+    },
+    "wedge": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 5
+    }
+  },
+  "labels": [
+    "driver",
+    "fairway",
+    "hybrid",
+    "iron",
+    "wedge"
+  ],
+  "confusion_matrix": [
+    [
+      110,
+      25,
+      5,
+      46,
+      4
+    ],
+    [
+      13,
+      12,
+      0,
+      7,
+      0
+    ],
+    [
+      4,
+      2,
+      0,
+      1,
+      0
+    ],
+    [
+      22,
+      7,
+      1,
+      16,
+      0
+    ],
+    [
+      2,
+      2,
+      0,
+      1,
+      0
+    ]
+  ],
+  "n_train": 1120,
+  "n_test": 280,
+  "feature_columns": [
+    "Unnamed: 0",
+    "id",
+    "sex",
+    "view",
+    "slow",
+    "events_count",
+    "events_mean",
+    "events_min",
+    "events_max",
+    "events_std",
+    "bbox_w",
+    "bbox_h",
+    "bbox_area",
+    "bbox_aspect_ratio"
+  ]
+}
