@@ -7,6 +7,7 @@ import {
   mockLeaderboard, mockTutorials, mockProgress, mockSchedules, mockFeedback
 } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
+import { getApiBase, getWsUrl } from '@/lib/apiConfig';
 
 interface DataContextType {
   players: Player[];
@@ -40,8 +41,8 @@ export const useData = () => {
   return ctx;
 };
 
-const BACKEND_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:5000';
+const BACKEND_URL = getApiBase();
+const WS_URL = getWsUrl();
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
