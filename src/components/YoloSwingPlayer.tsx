@@ -194,7 +194,10 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     },
   ];
   
-  const keyframes = (analysisItem as any)?.poseKeyframes || defaultKeyframes;
+  const rawKeyframes = (analysisItem as any)?.poseKeyframes;
+  const keyframes = Array.isArray(rawKeyframes) && rawKeyframes.length > 0
+    ? rawKeyframes
+    : defaultKeyframes;
 
   // ------------------------------------------------------------------
   // Perfect ideal PGA Pro reference golfer keyframes (Pro Compare Model)
@@ -274,20 +277,21 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
 
   // Get active joint positions for the current progress
   const getJointsForProgress = (p: number, dataKeyframes: typeof keyframes) => {
+    if (!dataKeyframes || dataKeyframes.length === 0) {
+      return getJointsForProgress(p, defaultKeyframes);
+    }
+
     let startIndex = 0;
     let endIndex = 0;
-    
-    if (dataKeyframes.length > 0) {
-      // Default to the last frame if progress exceeds max frame
-      startIndex = dataKeyframes.length - 1;
-      endIndex = dataKeyframes.length - 1;
+    // Default to the last frame if progress exceeds max frame
+    startIndex = dataKeyframes.length - 1;
+    endIndex = dataKeyframes.length - 1;
 
-      for (let i = 0; i < dataKeyframes.length - 1; i++) {
-        if (p >= dataKeyframes[i].frame && p <= dataKeyframes[i + 1].frame) {
-          startIndex = i;
-          endIndex = i + 1;
-          break;
-        }
+    for (let i = 0; i < dataKeyframes.length - 1; i++) {
+      if (p >= dataKeyframes[i].frame && p <= dataKeyframes[i + 1].frame) {
+        startIndex = i;
+        endIndex = i + 1;
+        break;
       }
     }
 

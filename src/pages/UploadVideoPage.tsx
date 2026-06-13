@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Upload, Video, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useData } from '@/contexts/DataContext';
 
 const UploadVideoPage: React.FC = () => {
-  const navigate = useNavigate();
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploaded, setUploaded] = useState(false);
+  const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [error, setError] = useState('');
   const { uploadVideo } = useData();
@@ -36,9 +36,7 @@ const UploadVideoPage: React.FC = () => {
     setUploading(false);
     if (result.success) {
       setUploaded(true);
-      if (result.videoId) {
-        navigate(`/analysis/${result.videoId}`);
-      }
+      setUploadedVideoId(result.videoId || null);
     } else {
       setError('Upload failed. Is the server running?');
     }
@@ -56,9 +54,12 @@ const UploadVideoPage: React.FC = () => {
           <CheckCircle size={48} className="text-green-400 mx-auto mb-4" />
           <h2 className="font-display text-2xl font-bold mb-2">Upload Successful!</h2>
           <p className="text-muted-foreground mb-6">Your video is being processed. AI analysis will begin shortly.</p>
-          <div className="flex gap-3 justify-center">
-            <button onClick={() => { setFile(null); setUploaded(false); setTitle(''); }} className="golf-btn-secondary">Upload Another</button>
-            <a href="/videos" className="golf-btn-primary">View My Videos</a>
+          <div className="flex gap-3 justify-center flex-wrap">
+            {uploadedVideoId && (
+              <Link to={`/analysis/${uploadedVideoId}`} className="golf-btn-primary">Lihat Hasil Analisis</Link>
+            )}
+            <button onClick={() => { setFile(null); setUploaded(false); setUploadedVideoId(null); setTitle(''); }} className="golf-btn-secondary">Upload Another</button>
+            <Link to="/videos" className="golf-btn-secondary">View My Videos</Link>
           </div>
         </motion.div>
       ) : (

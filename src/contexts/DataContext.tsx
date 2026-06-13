@@ -23,6 +23,7 @@ interface DataContextType {
   loading: boolean;
   isBackendConnected: boolean;
   refreshData: () => Promise<void>;
+  syncVideoAnalysis: (videoId: string) => Promise<boolean>;
   
   // CRUD Actions
   uploadVideo: (title: string, file: File | null, duration?: number) => Promise<{ success: boolean; videoId?: string }>;
@@ -131,6 +132,40 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsBackendConnected(false);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const syncVideoAnalysis = useCallback(async (videoId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/videos/${videoId}/analysis`);
+      if (!response.ok) return false;
+
+      const data = await response.json();
+      if (!data.success) return false;
+
+      if (data.video) {
+        setVideos(prev => {
+          const exists = prev.some(v => v.id === videoId);
+          if (exists) {
+            return prev.map(v => (v.id === videoId ? data.video : v));
+          }
+          return [data.video, ...prev];
+        });
+      }
+
+      if (data.analysis) {
+        setAnalysis(prev => {
+          if (prev.some(a => a.videoId === videoId)) {
+            return prev.map(a => (a.videoId === videoId ? data.analysis : a));
+          }
+          return [data.analysis, ...prev];
+        });
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
     }
   }, []);
 
@@ -311,6 +346,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (response.ok) {
         const payload = await response.json();
+        if (payload.video) {
+          setVideos(prev => {
+            if (prev.some(v => v.id === payload.video.id)) {
+              return prev.map(v => (v.id === payload.video.id ? payload.video : v));
+            }
+            return [payload.video, ...prev];
+          });
+        }
         setIsBackendConnected(true);
         await fetchAllData();
         return { success: true, videoId: payload.video?.id };
@@ -618,6 +661,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading, 
       isBackendConnected,
       refreshData: fetchAllData,
+      syncVideoAnalysis,
       uploadVideo, 
       deleteVideo, 
       addFeedback, 

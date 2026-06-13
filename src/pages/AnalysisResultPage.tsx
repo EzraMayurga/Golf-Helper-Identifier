@@ -2,36 +2,40 @@ import React, { useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useData } from '@/contexts/DataContext';
-import { getApiBase } from '@/lib/apiConfig';
 import { getScoreColor, getScoreLabel, getRiskColor, getRiskLabel } from '@/services/aiService';
 import { YoloSwingPlayer } from '@/components/YoloSwingPlayer';
 import { AiCoachAssistant } from '@/components/AiCoachAssistant';
-import { ArrowLeft, AlertTriangle, CheckCircle, Target, Activity, MessageSquare } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, CheckCircle, Target, Activity, MessageSquare, Loader2 } from 'lucide-react';
+import { AnalysisResult } from '@/data/mockData';
+
+const normalizeAnalysis = (raw: AnalysisResult | undefined): AnalysisResult | null => {
+  if (!raw) return null;
+  return {
+    ...raw,
+    swingPhases: Array.isArray(raw.swingPhases) ? raw.swingPhases : [],
+    recommendation: Array.isArray(raw.recommendation) ? raw.recommendation : [],
+    injuryRiskAreas: Array.isArray(raw.injuryRiskAreas) ? raw.injuryRiskAreas : [],
+    swingScore: typeof raw.swingScore === 'number' ? raw.swingScore : 0,
+    injuryRiskScore: typeof raw.injuryRiskScore === 'number' ? raw.injuryRiskScore : 0,
+    keypointsDetected: typeof raw.keypointsDetected === 'number' ? raw.keypointsDetected : 33,
+  };
+};
 
 const AnalysisResultPage: React.FC = () => {
   const { videoId } = useParams();
-  const { analysis: allAnalysis, feedback: allFeedback, videos, refreshData } = useData();
-  const analysis = allAnalysis.find(a => a.videoId === videoId);
+  const { analysis: allAnalysis, feedback: allFeedback, videos, syncVideoAnalysis, loading } = useData();
+  const analysis = normalizeAnalysis(allAnalysis.find(a => a.videoId === videoId));
   const videoItem = videos.find(v => v.id === videoId);
   const feedback = allFeedback.filter(f => f.videoId === videoId);
 
-  // Active polling when waiting for backend analysis (covers WebSocket outages)
   useEffect(() => {
     if (!videoId || analysis) return;
 
     let cancelled = false;
 
     const pollAnalysis = async () => {
-      try {
-        const response = await fetch(`${getApiBase()}/api/videos/${videoId}/analysis`);
-        if (!response.ok || cancelled) return;
-        const data = await response.json();
-        if (data.success && data.analysis) {
-          await refreshData();
-        }
-      } catch {
-        await refreshData();
-      }
+      if (cancelled) return;
+      await syncVideoAnalysis(videoId);
     };
 
     pollAnalysis();
@@ -40,9 +44,18 @@ const AnalysisResultPage: React.FC = () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [videoId, analysis, refreshData]);
+  }, [videoId, analysis, syncVideoAnalysis]);
 
   if (!analysis) {
+    if (loading && !videoItem) {
+      return (
+        <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-gold" />
+          <p>Memuat data video...</p>
+        </div>
+      );
+    }
+
     if (videoItem) {
       const isProcessing = videoItem.status === 'processing' || videoItem.status === 'uploaded';
       return (
@@ -56,18 +69,23 @@ const AnalysisResultPage: React.FC = () => {
               {isProcessing ? 'Sedang memproses video...' : 'Menunggu hasil analisis...'} • {videoItem.uploadDate}
             </p>
           </div>
-          <div className="relative golf-card-glow overflow-hidden rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
-            <div className="absolute inset-0 bg-gold/5 animate-pulse" />
-            <div className="relative z-10 flex flex-col items-center">
-               <Activity className="w-16 h-16 text-gold animate-bounce mb-6" />
-               <h2 className="font-display text-2xl font-bold mb-2 text-white">Sedang Menganalisis Ayunan...</h2>
-               <p className="text-muted-foreground max-w-md mx-auto">AI sedang mendeteksi kerangka (skeleton) dari ayunan Anda menggunakan model YOLO. Halaman ini akan otomatis menampilkan hasil begitu analisis selesai.</p>
-            </div>
+          <div className="golf-card text-center py-16 min-h-[360px] flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-14 h-14 text-gold animate-spin" />
+            <h2 className="font-display text-2xl font-bold">Sedang Menganalisis Ayunan...</h2>
+            <p className="text-muted-foreground max-w-md mx-auto">
+              AI sedang mendeteksi kerangka (skeleton) ayunan Anda. Hasil akan muncul otomatis di halaman ini.
+            </p>
           </div>
         </div>
       );
     }
-    return <div className="text-center py-20 text-muted-foreground">Belum ada data analisis.</div>;
+
+    return (
+      <div className="text-center py-20 space-y-4">
+        <p className="text-muted-foreground">Belum ada data analisis untuk video ini.</p>
+        <Link to="/videos" className="golf-btn-primary inline-block">Kembali ke My Videos</Link>
+      </div>
+    );
   }
 
   return (
@@ -81,7 +99,6 @@ const AnalysisResultPage: React.FC = () => {
         <p className="text-muted-foreground text-sm">AI-generated analysis report • {analysis.createdAt}</p>
       </div>
 
-      {/* Score hero */}
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="golf-card-glow text-center py-8">
         <p className="golf-label mb-2">Overall Swing Score</p>
         <p className={`font-display text-7xl font-bold ${getScoreColor(analysis.swingScore)}`}>{analysis.swingScore}</p>
@@ -104,7 +121,6 @@ const AnalysisResultPage: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* YOLO Swing Analyzer & AI Coach Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-3">
           <YoloSwingPlayer videoId={videoId || 'v1'} swingScore={analysis.swingScore} />
@@ -115,7 +131,6 @@ const AnalysisResultPage: React.FC = () => {
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Swing phases */}
         <div className="golf-card">
           <h2 className="font-display text-xl font-semibold mb-4 flex items-center gap-2"><Activity size={18} className="text-gold" /> Swing Phases</h2>
           <div className="space-y-4">
@@ -134,7 +149,6 @@ const AnalysisResultPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Injury risk */}
         <div className="space-y-6">
           <div className="golf-card">
             <h2 className="font-display text-xl font-semibold mb-4 flex items-center gap-2"><AlertTriangle size={18} className="text-yellow-500" /> Injury Risk</h2>
@@ -153,7 +167,6 @@ const AnalysisResultPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Recommendations */}
           <div className="golf-card">
             <h2 className="font-display text-xl font-semibold mb-4 flex items-center gap-2"><Target size={18} className="text-gold" /> Recommendations</h2>
             <ul className="space-y-3">
@@ -168,7 +181,6 @@ const AnalysisResultPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Coach feedback */}
       {feedback.length > 0 && (
         <div className="golf-card">
           <h2 className="font-display text-xl font-semibold mb-4 flex items-center gap-2"><MessageSquare size={18} className="text-blue-400" /> Coach Feedback</h2>
