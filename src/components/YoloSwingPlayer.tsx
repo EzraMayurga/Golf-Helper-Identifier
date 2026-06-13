@@ -98,6 +98,64 @@ const drawAngleArc = (
 };
 
 type JointCoord = { x: number; y: number };
+type PoseJointName =
+  | 'head'
+  | 'lShoulder'
+  | 'rShoulder'
+  | 'lElbow'
+  | 'rElbow'
+  | 'lWrist'
+  | 'rWrist'
+  | 'lHip'
+  | 'rHip'
+  | 'lKnee'
+  | 'rKnee'
+  | 'lFoot'
+  | 'rFoot'
+  | 'lAnkle'
+  | 'rAnkle'
+  | 'shoulders'
+  | 'hips'
+  | 'wrists'
+  | 'clubHead';
+
+type PoseFrame = {
+  frame: number;
+  phase: string;
+} & Partial<Record<PoseJointName, JointCoord>>;
+
+const BODY_JOINTS: PoseJointName[] = [
+  'head',
+  'lShoulder',
+  'rShoulder',
+  'lElbow',
+  'rElbow',
+  'lWrist',
+  'rWrist',
+  'lHip',
+  'rHip',
+  'lKnee',
+  'rKnee',
+  'lAnkle',
+  'rAnkle',
+];
+
+const BODY_SEGMENTS: [PoseJointName, PoseJointName][] = [
+  ['head', 'lShoulder'],
+  ['head', 'rShoulder'],
+  ['lShoulder', 'rShoulder'],
+  ['lShoulder', 'lElbow'],
+  ['lElbow', 'lWrist'],
+  ['rShoulder', 'rElbow'],
+  ['rElbow', 'rWrist'],
+  ['lShoulder', 'lHip'],
+  ['rShoulder', 'rHip'],
+  ['lHip', 'rHip'],
+  ['lHip', 'lKnee'],
+  ['lKnee', 'lAnkle'],
+  ['rHip', 'rKnee'],
+  ['rKnee', 'rAnkle'],
+];
 
 /** Convert stored joint coords (0-1 normalized or legacy 400x300) to 0-1 range. */
 const normalizeJointCoord = (joint: JointCoord): JointCoord => {
@@ -138,6 +196,100 @@ const mapJointToCanvas = (
     x: letterbox.drawX + norm.x * letterbox.drawW,
     y: letterbox.drawY + norm.y * letterbox.drawH,
   };
+};
+
+const resolvePoseJoint = (pose: PoseFrame, name: PoseJointName): JointCoord | undefined => {
+  if (pose[name]) return pose[name];
+  if (name === 'lShoulder' || name === 'rShoulder') return pose.shoulders;
+  if (name === 'lHip' || name === 'rHip') return pose.hips;
+  if (name === 'lWrist' || name === 'rWrist' || name === 'lElbow' || name === 'rElbow') return pose.wrists;
+  if (name === 'lAnkle') return pose.lFoot;
+  if (name === 'rAnkle') return pose.rFoot;
+  if (name === 'lFoot') return pose.lAnkle;
+  if (name === 'rFoot') return pose.rAnkle;
+  return undefined;
+};
+
+const hasDetailedBodyPose = (pose: PoseFrame): boolean => (
+  Boolean(
+    pose.lShoulder &&
+    pose.rShoulder &&
+    pose.lHip &&
+    pose.rHip
+  )
+);
+
+const drawBodySkeleton = (
+  ctx: CanvasRenderingContext2D,
+  pose: PoseFrame,
+  showDetailed = true
+) => {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = 'rgba(34, 211, 238, 0.55)';
+  ctx.strokeStyle = showDetailed ? 'rgba(16, 185, 129, 0.88)' : '#00ff80';
+  ctx.lineWidth = showDetailed ? 2.5 : 3;
+
+  if (showDetailed && hasDetailedBodyPose(pose)) {
+    BODY_SEGMENTS.forEach(([from, to]) => {
+      const a = resolvePoseJoint(pose, from);
+      const b = resolvePoseJoint(pose, to);
+      if (!a || !b) return;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    });
+
+    ctx.shadowBlur = 8;
+    BODY_JOINTS.forEach((name) => {
+      const joint = resolvePoseJoint(pose, name);
+      if (!joint) return;
+      ctx.fillStyle = name === 'head' ? '#67e8f9' : '#22c55e';
+      ctx.beginPath();
+      ctx.arc(joint.x, joint.y, name === 'head' ? 4.5 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.86)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    });
+
+    ctx.restore();
+    return;
+  }
+
+  const requiredLegacy = [pose.head, pose.shoulders, pose.hips, pose.lKnee, pose.lFoot, pose.rKnee, pose.rFoot, pose.wrists];
+  if (requiredLegacy.some((joint) => !joint)) {
+    ctx.restore();
+    return;
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(pose.head!.x, pose.head!.y);
+  ctx.lineTo(pose.shoulders!.x, pose.shoulders!.y);
+  ctx.lineTo(pose.hips!.x, pose.hips!.y);
+  ctx.lineTo(pose.lKnee!.x, pose.lKnee!.y);
+  ctx.lineTo(pose.lFoot!.x, pose.lFoot!.y);
+  ctx.moveTo(pose.hips!.x, pose.hips!.y);
+  ctx.lineTo(pose.rKnee!.x, pose.rKnee!.y);
+  ctx.lineTo(pose.rFoot!.x, pose.rFoot!.y);
+  ctx.moveTo(pose.shoulders!.x, pose.shoulders!.y);
+  ctx.lineTo(pose.wrists!.x, pose.wrists!.y);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  requiredLegacy.forEach((joint) => {
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.arc(joint!.x, joint!.y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  });
+  ctx.restore();
 };
 
 /** Detect old server-side fake fallback skeleton (centered dummy, not real YOLO). */
@@ -185,7 +337,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   // ------------------------------------------------------------------
   // 5 standard swing phases keyframes coordinates (Fallback)
   // ------------------------------------------------------------------
-  const defaultKeyframes = [
+  const defaultKeyframes: PoseFrame[] = [
     {
       frame: 0,
       phase: 'address',
@@ -258,7 +410,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   const analysisVideoW = (analysisItem as any)?.videoWidth as number | undefined;
   const analysisVideoH = (analysisItem as any)?.videoHeight as number | undefined;
   const hasYoloKeyframes = Array.isArray(rawKeyframes) && rawKeyframes.length > 0 && !isFakeFallbackKeyframes(rawKeyframes);
-  const keyframes = hasYoloKeyframes
+  const keyframes: PoseFrame[] = hasYoloKeyframes
     ? rawKeyframes
     : videoUrl
       ? []
@@ -276,7 +428,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   // ------------------------------------------------------------------
   // Perfect ideal PGA Pro reference golfer keyframes (Pro Compare Model)
   // ------------------------------------------------------------------
-  const proKeyframes = [
+  const proKeyframes: PoseFrame[] = [
     {
       frame: 0,
       phase: 'address',
@@ -350,20 +502,31 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   };
 
   // Get active joint positions for the current progress
-  const getJointsForProgress = (p: number, dataKeyframes: typeof keyframes, allowDemoFallback = true) => {
+  const getJointsForProgress = (p: number, dataKeyframes: PoseFrame[], allowDemoFallback = true): PoseFrame => {
     if (!dataKeyframes || dataKeyframes.length === 0) {
       if (allowDemoFallback && !videoUrl) {
         return getJointsForProgress(p, defaultKeyframes, false);
       }
       return {
+        frame: p,
         phase: 'address',
         head: { x: 0, y: 0 },
+        lShoulder: { x: 0, y: 0 },
+        rShoulder: { x: 0, y: 0 },
+        lElbow: { x: 0, y: 0 },
+        rElbow: { x: 0, y: 0 },
+        lWrist: { x: 0, y: 0 },
+        rWrist: { x: 0, y: 0 },
+        lHip: { x: 0, y: 0 },
+        rHip: { x: 0, y: 0 },
         shoulders: { x: 0, y: 0 },
         hips: { x: 0, y: 0 },
         lKnee: { x: 0, y: 0 },
         lFoot: { x: 0, y: 0 },
         rKnee: { x: 0, y: 0 },
         rFoot: { x: 0, y: 0 },
+        lAnkle: { x: 0, y: 0 },
+        rAnkle: { x: 0, y: 0 },
         wrists: { x: 0, y: 0 },
         clubHead: { x: 0, y: 0 },
       };
@@ -389,22 +552,36 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     const range = endKf.frame - startKf.frame;
     const factor = range === 0 ? 0 : (p - startKf.frame) / range;
 
-    const lerpJoint = (j: 'head' | 'shoulders' | 'hips' | 'lKnee' | 'lFoot' | 'rKnee' | 'rFoot' | 'wrists' | 'clubHead') => {
+    const lerpJoint = (j: PoseJointName) => {
+      const start = resolvePoseJoint(startKf, j);
+      const end = resolvePoseJoint(endKf, j);
+      if (!start || !end) return undefined;
       return {
-        x: interpolate(startKf[j].x, endKf[j].x, factor),
-        y: interpolate(startKf[j].y, endKf[j].y, factor),
+        x: interpolate(start.x, end.x, factor),
+        y: interpolate(start.y, end.y, factor),
       };
     };
 
     return {
       phase: endKf.phase,
+      frame: p,
       head: lerpJoint('head'),
+      lShoulder: lerpJoint('lShoulder'),
+      rShoulder: lerpJoint('rShoulder'),
+      lElbow: lerpJoint('lElbow'),
+      rElbow: lerpJoint('rElbow'),
+      lWrist: lerpJoint('lWrist'),
+      rWrist: lerpJoint('rWrist'),
+      lHip: lerpJoint('lHip'),
+      rHip: lerpJoint('rHip'),
       shoulders: lerpJoint('shoulders'),
       hips: lerpJoint('hips'),
       lKnee: lerpJoint('lKnee'),
       lFoot: lerpJoint('lFoot'),
       rKnee: lerpJoint('rKnee'),
       rFoot: lerpJoint('rFoot'),
+      lAnkle: lerpJoint('lAnkle') || lerpJoint('lFoot'),
+      rAnkle: lerpJoint('rAnkle') || lerpJoint('rFoot'),
       wrists: lerpJoint('wrists'),
       clubHead: lerpJoint('clubHead'),
     };
@@ -558,104 +735,98 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
         : progressRef.current;
 
       const rawPose = getJointsForProgress(currentProgress, ds.keyframes, !ds.videoUrl);
-      const pose = {
+      const mapOptionalPoint = (joint?: JointCoord) => joint ? mapPoint(joint) : undefined;
+      const pose: PoseFrame = {
+        frame: rawPose.frame,
         phase: rawPose.phase,
-        head: mapPoint(rawPose.head),
-        shoulders: mapPoint(rawPose.shoulders),
-        hips: mapPoint(rawPose.hips),
-        lKnee: mapPoint(rawPose.lKnee),
-        lFoot: mapPoint(rawPose.lFoot),
-        rKnee: mapPoint(rawPose.rKnee),
-        rFoot: mapPoint(rawPose.rFoot),
-        wrists: mapPoint(rawPose.wrists),
-        clubHead: mapPoint(rawPose.clubHead),
+        head: mapOptionalPoint(rawPose.head),
+        lShoulder: mapOptionalPoint(rawPose.lShoulder),
+        rShoulder: mapOptionalPoint(rawPose.rShoulder),
+        lElbow: mapOptionalPoint(rawPose.lElbow),
+        rElbow: mapOptionalPoint(rawPose.rElbow),
+        lWrist: mapOptionalPoint(rawPose.lWrist),
+        rWrist: mapOptionalPoint(rawPose.rWrist),
+        lHip: mapOptionalPoint(rawPose.lHip),
+        rHip: mapOptionalPoint(rawPose.rHip),
+        shoulders: mapOptionalPoint(rawPose.shoulders),
+        hips: mapOptionalPoint(rawPose.hips),
+        lKnee: mapOptionalPoint(rawPose.lKnee),
+        lFoot: mapOptionalPoint(rawPose.lFoot),
+        rKnee: mapOptionalPoint(rawPose.rKnee),
+        rFoot: mapOptionalPoint(rawPose.rFoot),
+        lAnkle: mapOptionalPoint(rawPose.lAnkle),
+        rAnkle: mapOptionalPoint(rawPose.rAnkle),
+        wrists: mapOptionalPoint(rawPose.wrists),
+        clubHead: mapOptionalPoint(rawPose.clubHead),
       };
 
       if (ds.showSkeleton && (ds.isLiveYoloScan || !ds.videoUrl)) {
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgba(0, 255, 128, 0.8)';
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#00ff80';
+        drawBodySkeleton(ctx, pose, true);
 
-        ctx.beginPath();
-        ctx.moveTo(pose.head.x, pose.head.y);
-        ctx.lineTo(pose.shoulders.x, pose.shoulders.y);
-        ctx.lineTo(pose.hips.x, pose.hips.y);
-        ctx.lineTo(pose.lKnee.x, pose.lKnee.y);
-        ctx.lineTo(pose.lFoot.x, pose.lFoot.y);
-        ctx.moveTo(pose.hips.x, pose.hips.y);
-        ctx.lineTo(pose.rKnee.x, pose.rKnee.y);
-        ctx.lineTo(pose.rFoot.x, pose.rFoot.y);
-        ctx.moveTo(pose.shoulders.x, pose.shoulders.y);
-        ctx.lineTo(pose.wrists.x, pose.wrists.y);
-        ctx.stroke();
-
-        ctx.strokeStyle = '#fbbf24';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(pose.wrists.x, pose.wrists.y);
-        ctx.lineTo(pose.clubHead.x, pose.clubHead.y);
-        ctx.stroke();
-
-        ctx.shadowBlur = 0;
-        const joints = [pose.head, pose.shoulders, pose.hips, pose.lKnee, pose.lFoot, pose.rKnee, pose.rFoot, pose.wrists];
-        joints.forEach((joint) => {
-          ctx.fillStyle = '#ff3366';
+        if (pose.wrists && pose.clubHead) {
+          ctx.save();
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 2.5;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = 'rgba(251, 191, 36, 0.7)';
           ctx.beginPath();
-          ctx.arc(joint.x, joint.y, 5, 0, Math.PI * 2);
+          ctx.moveTo(pose.wrists.x, pose.wrists.y);
+          ctx.lineTo(pose.clubHead.x, pose.clubHead.y);
+          ctx.stroke();
+
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          ctx.arc(pose.clubHead.x, pose.clubHead.y, 5, 0, Math.PI * 2);
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1.5;
+          ctx.lineWidth = 1.3;
           ctx.stroke();
-        });
-
-        ctx.fillStyle = '#fbbf24';
-        ctx.beginPath();
-        ctx.arc(pose.clubHead.x, pose.clubHead.y, 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+          ctx.restore();
+        }
       }
 
       if (currentProgress >= 65 && ds.showSkeleton && (ds.isLiveYoloScan || !ds.videoUrl)) {
         const impactRaw = getJointsForProgress(65, ds.keyframes, !ds.videoUrl);
-        const impactClub = mapPoint(impactRaw.clubHead);
-        const flightProgress = Math.min(1, (currentProgress - 65) / 35);
-        const ballEndX = impactClub.x + 120;
-        const ballEndY = impactClub.y - 80;
-        const ctrlX = impactClub.x + 50;
-        const ctrlY = impactClub.y - 100;
-        const ballX = Math.pow(1 - flightProgress, 2) * impactClub.x + 2 * (1 - flightProgress) * flightProgress * ctrlX + Math.pow(flightProgress, 2) * ballEndX;
-        const ballY = Math.pow(1 - flightProgress, 2) * impactClub.y + 2 * (1 - flightProgress) * flightProgress * ctrlY + Math.pow(flightProgress, 2) * ballEndY;
+        if (impactRaw.clubHead) {
+          const impactClub = mapPoint(impactRaw.clubHead);
+          const flightProgress = Math.min(1, (currentProgress - 65) / 35);
+          const ballEndX = impactClub.x + 120;
+          const ballEndY = impactClub.y - 80;
+          const ctrlX = impactClub.x + 50;
+          const ctrlY = impactClub.y - 100;
+          const ballX = Math.pow(1 - flightProgress, 2) * impactClub.x + 2 * (1 - flightProgress) * flightProgress * ctrlX + Math.pow(flightProgress, 2) * ballEndX;
+          const ballY = Math.pow(1 - flightProgress, 2) * impactClub.y + 2 * (1 - flightProgress) * flightProgress * ctrlY + Math.pow(flightProgress, 2) * ballEndY;
 
-        ctx.beginPath();
-        ctx.moveTo(impactClub.x, impactClub.y);
-        ctx.quadraticCurveTo(ctrlX, ctrlY, ballX, ballY);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.setLineDash([5, 5]);
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(impactClub.x, impactClub.y);
+          ctx.quadraticCurveTo(ctrlX, ctrlY, ballX, ballY);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.setLineDash([5, 5]);
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.setLineDash([]);
 
-        ctx.beginPath();
-        ctx.arc(ballX, ballY, 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = '#00ffff';
-        ctx.fill();
-        ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(ballX, ballY, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = '#00ffff';
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
       }
 
       if (ds.showAngles && ds.showSkeleton && (ds.isLiveYoloScan || !ds.videoUrl)) {
-        const lKneeAngle = calculateAngle(pose.hips, pose.lKnee, pose.lFoot);
-        const rKneeAngle = calculateAngle(pose.hips, pose.rKnee, pose.rFoot);
-        const lHipAngle = calculateAngle(pose.shoulders, pose.hips, pose.lKnee);
-        drawAngleArc(ctx, pose.hips, pose.lKnee, pose.lFoot, lKneeAngle, '#00ff80');
-        drawAngleArc(ctx, pose.hips, pose.rKnee, pose.rFoot, rKneeAngle, '#00ff80');
-        drawAngleArc(ctx, pose.shoulders, pose.hips, pose.lKnee, lHipAngle, '#fbbf24');
+        const leftAnkle = pose.lAnkle || pose.lFoot;
+        const rightAnkle = pose.rAnkle || pose.rFoot;
+        if (pose.hips && pose.shoulders && pose.lKnee && pose.rKnee && leftAnkle && rightAnkle) {
+          const lKneeAngle = calculateAngle(pose.hips, pose.lKnee, leftAnkle);
+          const rKneeAngle = calculateAngle(pose.hips, pose.rKnee, rightAnkle);
+          const lHipAngle = calculateAngle(pose.shoulders, pose.hips, pose.lKnee);
+          drawAngleArc(ctx, pose.hips, pose.lKnee, leftAnkle, lKneeAngle, '#00ff80');
+          drawAngleArc(ctx, pose.hips, pose.rKnee, rightAnkle, rKneeAngle, '#00ff80');
+          drawAngleArc(ctx, pose.shoulders, pose.hips, pose.lKnee, lHipAngle, '#fbbf24');
+        }
       }
 
       ctx.shadowBlur = 8;
@@ -1020,7 +1191,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
           </div>
           {!isLiveYoloScan && videoUrl && (
             <div className="absolute bottom-3 left-3 right-3 px-2 py-2 rounded bg-amber-500/90 text-[10px] font-medium text-white text-center backdrop-blur-sm space-y-1.5">
-              <p>Scan YOLO belum akurat. Upload ulang atau scan ulang video ini.</p>
+              <p>Pose detection belum akurat. Silakan upload ulang atau scan ulang video.</p>
               <button
                 type="button"
                 disabled={reanalyzing}

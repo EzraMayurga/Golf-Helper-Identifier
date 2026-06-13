@@ -178,6 +178,14 @@ def build_frame_keypoints(kpts, kpt_conf, frame_w, frame_h, last_valid, phase, p
         return None
 
     head = norm(kpts[0][0], kpts[0][1], "head", 0)
+    l_shoulder = norm(kpts[5][0], kpts[5][1], "lShoulder", 5)
+    r_shoulder = norm(kpts[6][0], kpts[6][1], "rShoulder", 6)
+    l_elbow = norm(kpts[7][0], kpts[7][1], "lElbow", 7)
+    r_elbow = norm(kpts[8][0], kpts[8][1], "rElbow", 8)
+    l_wrist = norm(kpts[9][0], kpts[9][1], "lWrist", 9)
+    r_wrist = norm(kpts[10][0], kpts[10][1], "rWrist", 10)
+    l_hip = norm(kpts[11][0], kpts[11][1], "lHip", 11)
+    r_hip = norm(kpts[12][0], kpts[12][1], "rHip", 12)
     shoulders = avg_kpt(5, 6, "shoulders")
     hips = avg_kpt(11, 12, "hips")
 
@@ -208,6 +216,10 @@ def build_frame_keypoints(kpts, kpt_conf, frame_w, frame_h, last_valid, phase, p
 
     for name, val in [
         ("head", head), ("shoulders", shoulders), ("hips", hips),
+        ("lShoulder", l_shoulder), ("rShoulder", r_shoulder),
+        ("lElbow", l_elbow), ("rElbow", r_elbow),
+        ("lWrist", l_wrist), ("rWrist", r_wrist),
+        ("lHip", l_hip), ("rHip", r_hip),
         ("lKnee", l_knee), ("rKnee", r_knee), ("lFoot", l_foot),
         ("rFoot", r_foot), ("wrists", wrists), ("clubHead", club_head),
     ]:
@@ -218,12 +230,22 @@ def build_frame_keypoints(kpts, kpt_conf, frame_w, frame_h, last_valid, phase, p
         "frame": float(percentage),
         "phase": phase,
         "head": head or last_valid.get("head") or shoulders,
+        "lShoulder": l_shoulder or last_valid.get("lShoulder") or shoulders,
+        "rShoulder": r_shoulder or last_valid.get("rShoulder") or shoulders,
+        "lElbow": l_elbow or last_valid.get("lElbow") or wrists,
+        "rElbow": r_elbow or last_valid.get("rElbow") or wrists,
+        "lWrist": l_wrist or last_valid.get("lWrist") or wrists,
+        "rWrist": r_wrist or last_valid.get("rWrist") or wrists,
+        "lHip": l_hip or last_valid.get("lHip") or hips,
+        "rHip": r_hip or last_valid.get("rHip") or hips,
         "shoulders": shoulders,
         "hips": hips,
         "lKnee": l_knee,
         "lFoot": l_foot,
         "rKnee": r_knee,
         "rFoot": r_foot,
+        "lAnkle": l_foot,
+        "rAnkle": r_foot,
         "wrists": wrists,
         "clubHead": club_head,
     }
