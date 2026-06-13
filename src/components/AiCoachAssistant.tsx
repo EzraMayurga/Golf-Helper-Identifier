@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Send, Sparkles, User, Brain, AlertTriangle } from 'lucide-react';
 import { AnalysisResult } from '@/data/mockData';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const BACKEND_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 interface Message {
   sender: 'user' | 'coach';
