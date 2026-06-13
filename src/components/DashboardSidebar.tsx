@@ -80,49 +80,50 @@ const DashboardSidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
           <button onClick={onToggle} className="md:hidden text-muted-foreground">×</button>
         </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {navItems.map(item => {
-          const isActive = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
-                isActive
-                  ? 'bg-sidebar-accent text-sidebar-primary'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-primary'
-              }`}
-            >
-              <span className="flex-shrink-0">{item.icon}</span>
-              <span className={`text-sm font-medium ${collapsed ? 'md:hidden' : 'block'}`}>{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+        {/* Nav */}
+        <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
+          {navItems.map(item => {
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
+                  isActive
+                    ? 'bg-sidebar-accent text-sidebar-primary'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-primary'
+                }`}
+              >
+                <span className="flex-shrink-0">{item.icon}</span>
+                <span className={`text-sm font-medium ${collapsed ? 'md:hidden' : 'block'}`}>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
-      {/* User section */}
-      <div className="p-3 border-t border-sidebar-border">
-        {user && (
-          <div className={`mb-3 px-2 ${collapsed ? 'md:hidden' : 'block'}`}>
-            <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
-            <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
-          </div>
-        )}
-        <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-sidebar-accent/50 transition-all w-full">
-          <LogOut size={18} />
-          <span className={`text-sm ${collapsed ? 'md:hidden' : 'block'}`}>Logout</span>
+        {/* User section */}
+        <div className="p-3 border-t border-sidebar-border">
+          {user && (
+            <div className={`mb-3 px-2 ${collapsed ? 'md:hidden' : 'block'}`}>
+              <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
+              <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+            </div>
+          )}
+          <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-sidebar-accent/50 transition-all w-full">
+            <LogOut size={18} />
+            <span className={`text-sm ${collapsed ? 'md:hidden' : 'block'}`}>Logout</span>
+          </button>
+        </div>
+
+        {/* Toggle - Desktop Only */}
+        <button
+          onClick={onToggle}
+          className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-sidebar-accent border border-sidebar-border items-center justify-center text-sidebar-foreground hover:text-sidebar-primary transition-colors"
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
-      </div>
-
-      {/* Toggle - Desktop Only */}
-      <button
-        onClick={onToggle}
-        className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-sidebar-accent border border-sidebar-border items-center justify-center text-sidebar-foreground hover:text-sidebar-primary transition-colors"
-      >
-        {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-      </button>
-    </aside>
+      </aside>
+    </>
   );
 };
 

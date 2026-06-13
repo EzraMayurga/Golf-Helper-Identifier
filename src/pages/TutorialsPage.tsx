@@ -20,7 +20,7 @@ const TutorialsPage: React.FC = () => {
     return true;
   });
 
-  const handleWatch = (tutorial: any, locked: boolean) => {
+  const handleWatch = (tutorial: any, locked?: boolean) => {
     if (tutorial.videoUrl) {
       window.open(tutorial.videoUrl, '_blank');
     } else {
@@ -62,8 +62,6 @@ const TutorialsPage: React.FC = () => {
               key={tutorial.id} 
               onClick={() => handleWatch(tutorial, locked)}
               className={`golf-card group cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:border-gold/50 ${locked ? 'opacity-75' : ''}`}
-              onClick={() => handleWatch(tutorial)}
-              className="golf-card group cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:border-gold/50"
             >
               <div className="aspect-video bg-muted rounded-lg mb-4 flex items-center justify-center relative overflow-hidden">
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
