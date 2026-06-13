@@ -107,6 +107,19 @@ function broadcast(type, payload) {
   });
 }
 
+const ALLOWED_VIDEO_EXT = ['.mp4', '.mov', '.webm', '.avi'];
+const PYTHON_ANALYSIS_TIMEOUT_MS = 45000;
+
+function generateFallbackKeyframes() {
+  return [
+    { frame: 0, phase: 'address', head: { x: 200, y: 80 }, shoulders: { x: 200, y: 110 }, hips: { x: 195, y: 160 }, lKnee: { x: 185, y: 190 }, lFoot: { x: 180, y: 220 }, rKnee: { x: 205, y: 190 }, rFoot: { x: 210, y: 220 }, wrists: { x: 198, y: 145 }, clubHead: { x: 175, y: 220 } },
+    { frame: 25, phase: 'backswing', head: { x: 198, y: 78 }, shoulders: { x: 192, y: 110 }, hips: { x: 192, y: 160 }, lKnee: { x: 192, y: 190 }, lFoot: { x: 180, y: 220 }, rKnee: { x: 205, y: 190 }, rFoot: { x: 210, y: 220 }, wrists: { x: 155, y: 95 }, clubHead: { x: 125, y: 65 } },
+    { frame: 50, phase: 'downswing', head: { x: 200, y: 82 }, shoulders: { x: 198, y: 110 }, hips: { x: 198, y: 160 }, lKnee: { x: 185, y: 190 }, lFoot: { x: 180, y: 220 }, rKnee: { x: 202, y: 190 }, rFoot: { x: 210, y: 220 }, wrists: { x: 185, y: 130 }, clubHead: { x: 155, y: 105 } },
+    { frame: 65, phase: 'impact', head: { x: 202, y: 84 }, shoulders: { x: 204, y: 110 }, hips: { x: 206, y: 158 }, lKnee: { x: 180, y: 190 }, lFoot: { x: 180, y: 220 }, rKnee: { x: 200, y: 190 }, rFoot: { x: 210, y: 220 }, wrists: { x: 204, y: 145 }, clubHead: { x: 195, y: 220 } },
+    { frame: 100, phase: 'follow-through', head: { x: 215, y: 78 }, shoulders: { x: 218, y: 105 }, hips: { x: 216, y: 155 }, lKnee: { x: 180, y: 190 }, lFoot: { x: 180, y: 220 }, rKnee: { x: 200, y: 190 }, rFoot: { x: 208, y: 216 }, wrists: { x: 238, y: 92 }, clubHead: { x: 260, y: 65 } }
+  ];
+}
+
 // AI swing analysis helper (Connects to Python Backend)
 async function triggerAIAnalysis(videoId, playerId) {
   console.log(`[AI Engine] Initializing analysis for video: ${videoId}`);
@@ -120,20 +133,32 @@ async function triggerAIAnalysis(videoId, playerId) {
   broadcast('VIDEO_UPDATE', { videoId, status: 'processing' });
   
   try {
-    // Extract local file path from videoUrl
-    let filename = video.videoUrl.split('/').pop();
-    let localPath = path.join(__dirname, 'uploads', filename);
-    
-    // Fallback if not an uploaded file (e.g. mixkit demo video string)
-    if (!filename.includes('.mp4')) {
-      throw new Error("Only uploaded local files are supported for Python AI analysis in this demo.");
+    const filename = video.videoUrl.split('/').pop();
+    const localPath = path.join(__dirname, 'uploads', filename);
+    const ext = path.extname(filename || '').toLowerCase();
+
+    if (!filename || !ALLOWED_VIDEO_EXT.includes(ext) || !fs.existsSync(localPath)) {
+      throw new Error(`Video file not found or unsupported: ${filename}`);
     }
 
-    const response = await fetch(`${PYTHON_BACKEND_URL}/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ video_path: localPath })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), PYTHON_ANALYSIS_TIMEOUT_MS);
+
+    let response;
+    try {
+      response = await fetch(`${PYTHON_BACKEND_URL}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_path: localPath }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Python backend returned HTTP ${response.status}`);
+    }
     
     const result = await response.json();
     
@@ -226,7 +251,7 @@ function applyFallbackAnalysis(videoId, playerId) {
     injuryRiskScore: randomBetween(10, 40),
     injuryRiskAreas: ['Lower back'],
     keypointsDetected: 33,
-    poseKeyframes: [],
+    poseKeyframes: generateFallbackKeyframes(),
     createdAt: new Date().toISOString().split('T')[0]
   };
 
@@ -301,6 +326,25 @@ app.get('/api/data', (req, res) => {
   res.json({
     ...db,
     videos: fixVideoUrls(db.videos || [], baseUrl)
+  });
+});
+
+// Poll analysis status for a single video (used when WebSocket is unavailable)
+app.get('/api/videos/:videoId/analysis', (req, res) => {
+  const { videoId } = req.params;
+  const db = readDB();
+  const baseUrl = getPublicBaseUrl(req);
+  const video = db.videos.find(v => v.id === videoId);
+
+  if (!video) {
+    return res.status(404).json({ success: false, message: 'Video not found' });
+  }
+
+  const analysisResult = db.analysis.find(a => a.videoId === videoId) || null;
+  return res.json({
+    success: true,
+    video: fixVideoUrls([video], baseUrl)[0],
+    analysis: analysisResult
   });
 });
 

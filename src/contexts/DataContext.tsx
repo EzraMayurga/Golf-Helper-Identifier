@@ -22,9 +22,10 @@ interface DataContextType {
   messages: any[];
   loading: boolean;
   isBackendConnected: boolean;
+  refreshData: () => Promise<void>;
   
   // CRUD Actions
-  uploadVideo: (title: string, file: File | null, duration?: number) => Promise<boolean>;
+  uploadVideo: (title: string, file: File | null, duration?: number) => Promise<{ success: boolean; videoId?: string }>;
   deleteVideo: (id: string) => Promise<boolean>;
   addFeedback: (videoId: string, feedbackText: string, rating: number) => Promise<boolean>;
   bookSchedule: (scheduleId: string) => Promise<boolean>;
@@ -137,6 +138,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchAllData();
   }, [fetchAllData]);
 
+  // Poll backend while any video is still being analyzed (WebSocket may be unavailable in production)
+  useEffect(() => {
+    const hasPendingAnalysis = videos.some(
+      v => v.status === 'processing' || v.status === 'uploaded'
+    );
+    if (!hasPendingAnalysis) return;
+
+    const interval = window.setInterval(() => {
+      fetchAllData();
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [videos, fetchAllData]);
+
   // WebSocket Live Sync
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -153,8 +168,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         socket.onclose = () => {
           console.log('[WebSocket] Disconnected from backend');
-          setIsBackendConnected(false);
-          // Try reconnecting in 5 seconds
+          // Keep isBackendConnected true — REST API may still work even if WS drops
           reconnectTimeout = window.setTimeout(connectWebSocket, 5000);
         };
 
@@ -267,41 +281,45 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [toast]);
 
   // CRUD Actions
-  const uploadVideo = async (title: string, file: File | null, duration: number = 8): Promise<boolean> => {
-    if (!user) return false;
+  const uploadVideo = async (title: string, file: File | null, duration: number = 8): Promise<{ success: boolean; videoId?: string }> => {
+    if (!user) return { success: false };
     
-    // 1. Backend flow
-    if (isBackendConnected) {
-      try {
-        const formData = new FormData();
-        formData.append('title', title);
-        formData.append('duration', String(duration));
-        formData.append('playerId', user.id);
-        if (file) {
-          formData.append('video', file);
-        }
-
-        const token = localStorage.getItem('golf_token');
-        const headers: Record<string, string> = {
-          'X-Player-Id': user.id,
-          'X-Video-Title': encodeURIComponent(title)
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const response = await fetch(`${BACKEND_URL}/api/videos`, {
-          method: 'POST',
-          headers,
-          body: formData,
-        });
-        return response.ok;
-      } catch (e) {
-        console.error('Failed uploading video to backend:', e);
+    // Always try backend first — don't rely on WebSocket connection state
+    try {
+      const formData = new FormData();
+      formData.append('title', title);
+      formData.append('duration', String(duration));
+      formData.append('playerId', user.id);
+      if (file) {
+        formData.append('video', file);
       }
+
+      const token = localStorage.getItem('golf_token');
+      const headers: Record<string, string> = {
+        'X-Player-Id': user.id,
+        'X-Video-Title': encodeURIComponent(title)
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/videos`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (response.ok) {
+        const payload = await response.json();
+        setIsBackendConnected(true);
+        await fetchAllData();
+        return { success: true, videoId: payload.video?.id };
+      }
+    } catch (e) {
+      console.error('Failed uploading video to backend:', e);
     }
 
-    // 2. Offline Fallback flow
+    // Offline fallback when backend is unreachable
     const videoId = `v_${Date.now()}`;
     const newVideo: SwingVideo = {
       id: videoId,
@@ -364,7 +382,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }, 4000);
     }, 2000);
 
-    return true;
+    return { success: true, videoId };
   };
 
   const deleteVideo = async (id: string): Promise<boolean> => {
@@ -599,6 +617,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       messages,
       loading, 
       isBackendConnected,
+      refreshData: fetchAllData,
       uploadVideo, 
       deleteVideo, 
       addFeedback, 

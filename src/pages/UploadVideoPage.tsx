@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Upload, Video, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useData } from '@/contexts/DataContext';
 
 const UploadVideoPage: React.FC = () => {
+  const navigate = useNavigate();
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -30,10 +32,13 @@ const UploadVideoPage: React.FC = () => {
   const handleUpload = async () => {
     if (!file || !title) { setError('Please add a title and video file.'); return; }
     setUploading(true);
-    const success = await uploadVideo(title, file, 8);
+    const result = await uploadVideo(title, file, 8);
     setUploading(false);
-    if (success) {
+    if (result.success) {
       setUploaded(true);
+      if (result.videoId) {
+        navigate(`/analysis/${result.videoId}`);
+      }
     } else {
       setError('Upload failed. Is the server running?');
     }

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useData } from '@/contexts/DataContext';
+import { getApiBase } from '@/lib/apiConfig';
 import { getScoreColor, getScoreLabel, getRiskColor, getRiskLabel } from '@/services/aiService';
 import { YoloSwingPlayer } from '@/components/YoloSwingPlayer';
 import { AiCoachAssistant } from '@/components/AiCoachAssistant';
@@ -9,13 +10,41 @@ import { ArrowLeft, AlertTriangle, CheckCircle, Target, Activity, MessageSquare 
 
 const AnalysisResultPage: React.FC = () => {
   const { videoId } = useParams();
-  const { analysis: allAnalysis, feedback: allFeedback, videos } = useData();
+  const { analysis: allAnalysis, feedback: allFeedback, videos, refreshData } = useData();
   const analysis = allAnalysis.find(a => a.videoId === videoId);
   const videoItem = videos.find(v => v.id === videoId);
   const feedback = allFeedback.filter(f => f.videoId === videoId);
 
+  // Active polling when waiting for backend analysis (covers WebSocket outages)
+  useEffect(() => {
+    if (!videoId || analysis) return;
+
+    let cancelled = false;
+
+    const pollAnalysis = async () => {
+      try {
+        const response = await fetch(`${getApiBase()}/api/videos/${videoId}/analysis`);
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (data.success && data.analysis) {
+          await refreshData();
+        }
+      } catch {
+        await refreshData();
+      }
+    };
+
+    pollAnalysis();
+    const interval = window.setInterval(pollAnalysis, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [videoId, analysis, refreshData]);
+
   if (!analysis) {
     if (videoItem) {
+      const isProcessing = videoItem.status === 'processing' || videoItem.status === 'uploaded';
       return (
         <div className="space-y-6 max-w-5xl mx-auto">
           <Link to="/videos" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -23,14 +52,16 @@ const AnalysisResultPage: React.FC = () => {
           </Link>
           <div>
             <h1 className="font-display text-3xl font-bold">Swing Analysis</h1>
-            <p className="text-muted-foreground text-sm">Sedang memproses video... • {videoItem.uploadDate}</p>
+            <p className="text-muted-foreground text-sm">
+              {isProcessing ? 'Sedang memproses video...' : 'Menunggu hasil analisis...'} • {videoItem.uploadDate}
+            </p>
           </div>
           <div className="relative golf-card-glow overflow-hidden rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
             <div className="absolute inset-0 bg-gold/5 animate-pulse" />
             <div className="relative z-10 flex flex-col items-center">
                <Activity className="w-16 h-16 text-gold animate-bounce mb-6" />
                <h2 className="font-display text-2xl font-bold mb-2 text-white">Sedang Menganalisis Ayunan...</h2>
-               <p className="text-muted-foreground max-w-md mx-auto">AI sedang mendeteksi kerangka (skeleton) dari ayunan Anda menggunakan model YOLO. Mohon tunggu sebentar.</p>
+               <p className="text-muted-foreground max-w-md mx-auto">AI sedang mendeteksi kerangka (skeleton) dari ayunan Anda menggunakan model YOLO. Halaman ini akan otomatis menampilkan hasil begitu analisis selesai.</p>
             </div>
           </div>
         </div>
