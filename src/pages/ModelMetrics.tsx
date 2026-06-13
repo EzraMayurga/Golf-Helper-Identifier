@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getApiBase } from '@/lib/apiConfig';
 
 type Metrics = {
   accuracy: number;
@@ -18,7 +19,8 @@ export default function ModelMetrics() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/model-metrics')
+    const apiBase = getApiBase();
+    fetch(`${apiBase}/api/model-metrics`)
       .then((r) => r.json())
       .then((j) => {
         if (j.success) {

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getApiBase } from '@/lib/apiConfig';
 
 export default function PredictPage() {
   const [features, setFeatures] = useState<Record<string, any>>({});
@@ -12,7 +13,8 @@ export default function PredictPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/model-metrics')
+    const apiBase = getApiBase();
+    fetch(`${apiBase}/api/model-metrics`)
       .then(r => r.json())
       .then(j => {
         if (j.success) {
@@ -34,9 +36,10 @@ export default function PredictPage() {
   }
 
   function submit() {
+    const apiBase = getApiBase();
     setLoading(true);
     setResult(null);
-    fetch('/api/predict', {
+    fetch(`${apiBase}/api/predict`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ features })
