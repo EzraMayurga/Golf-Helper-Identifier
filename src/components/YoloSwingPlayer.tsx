@@ -97,13 +97,64 @@ const drawAngleArc = (
   ctx.restore();
 };
 
+type JointCoord = { x: number; y: number };
+
+/** Convert stored joint coords (0-1 normalized or legacy 400x300) to 0-1 range. */
+const normalizeJointCoord = (joint: JointCoord): JointCoord => {
+  if (joint.x <= 1 && joint.y <= 1 && joint.x >= 0 && joint.y >= 0) {
+    return { x: joint.x, y: joint.y };
+  }
+  return { x: joint.x / 400, y: joint.y / 300 };
+};
+
+/** Letterbox rect for object-contain video inside canvas. */
+const computeVideoLetterbox = (
+  canvasW: number,
+  canvasH: number,
+  videoW: number,
+  videoH: number
+) => {
+  if (!videoW || !videoH) {
+    return { drawX: 0, drawY: 0, drawW: canvasW, drawH: canvasH };
+  }
+  const videoAspect = videoW / videoH;
+  const canvasAspect = canvasW / canvasH;
+  if (videoAspect > canvasAspect) {
+    const drawW = canvasW;
+    const drawH = canvasW / videoAspect;
+    return { drawX: 0, drawY: (canvasH - drawH) / 2, drawW, drawH };
+  }
+  const drawH = canvasH;
+  const drawW = canvasH * videoAspect;
+  return { drawX: (canvasW - drawW) / 2, drawY: 0, drawW, drawH };
+};
+
+const mapJointToCanvas = (
+  joint: JointCoord,
+  letterbox: { drawX: number; drawY: number; drawW: number; drawH: number }
+) => {
+  const norm = normalizeJointCoord(joint);
+  return {
+    x: letterbox.drawX + norm.x * letterbox.drawW,
+    y: letterbox.drawY + norm.y * letterbox.drawH,
+  };
+};
+
+/** Detect old server-side fake fallback skeleton (centered dummy, not real YOLO). */
+const isFakeFallbackKeyframes = (kfs: unknown): boolean => {
+  if (!Array.isArray(kfs) || kfs.length === 0) return false;
+  const head = (kfs[0] as { head?: JointCoord })?.head;
+  if (!head) return false;
+  return Math.abs(head.x - 200) < 25 && Math.abs(head.y - 80) < 25 && kfs.length <= 6;
+};
+
 export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swingScore = 80 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const proCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const { videos, analysis } = useData();
+  const { videos, analysis, reanalyzeVideo } = useData();
   const videoItem = videos.find(v => v.id === videoId);
   const analysisItem = analysis.find(a => a.videoId === videoId);
   const videoUrl = videoItem?.videoUrl || "https://assets.mixkit.co/videos/preview/mixkit-golf-player-swinging-his-driver-at-the-range-31580-large.mp4";
@@ -122,6 +173,8 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [currentPoint, setCurrentPoint] = useState<{ x: number; y: number } | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   // ------------------------------------------------------------------
   // 5 standard swing phases keyframes coordinates (Fallback)
@@ -195,9 +248,18 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   ];
   
   const rawKeyframes = (analysisItem as any)?.poseKeyframes;
-  const keyframes = Array.isArray(rawKeyframes) && rawKeyframes.length > 0
-    ? rawKeyframes
-    : defaultKeyframes;
+  const poseSource = (analysisItem as any)?.poseSource as string | undefined;
+  const hasYoloKeyframes = Array.isArray(rawKeyframes) && rawKeyframes.length > 0 && !isFakeFallbackKeyframes(rawKeyframes);
+  const keyframes = hasYoloKeyframes ? rawKeyframes : defaultKeyframes;
+  const isLiveYoloScan = hasYoloKeyframes && poseSource !== 'fallback';
+
+  useEffect(() => {
+    setVideoReady(false);
+  }, [videoUrl]);
+
+  const handleVideoReady = () => {
+    setVideoReady(true);
+  };
 
   // ------------------------------------------------------------------
   // Perfect ideal PGA Pro reference golfer keyframes (Pro Compare Model)
@@ -419,37 +481,16 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
       ctx.fill();
     }
 
-    // --- Letterbox alignment math for object-contain ---
+    // --- Letterbox alignment for object-contain video ---
     const video = videoRef.current;
-    let drawW = canvas.width;
-    let drawH = canvas.height;
-    let drawX = 0;
-    let drawY = 0;
+    const letterbox = computeVideoLetterbox(
+      canvas.width,
+      canvas.height,
+      video?.videoWidth || 0,
+      video?.videoHeight || 0
+    );
 
-    if (video && video.videoWidth > 0 && video.videoHeight > 0) {
-      const videoAspect = video.videoWidth / video.videoHeight;
-      const canvasAspect = canvas.width / canvas.height;
-
-      if (videoAspect > canvasAspect) {
-        drawW = canvas.width;
-        drawH = canvas.width / videoAspect;
-        drawY = (canvas.height - drawH) / 2;
-      } else {
-        drawH = canvas.height;
-        drawW = canvas.height * videoAspect;
-        drawX = (canvas.width - drawW) / 2;
-      }
-    }
-
-    const mapPoint = (joint: {x: number, y: number}) => {
-      // Un-scale the 400x300 Python normalization
-      const x_norm = joint.x / 400;
-      const y_norm = joint.y / 300;
-      return {
-        x: drawX + x_norm * drawW,
-        y: drawY + y_norm * drawH
-      };
-    };
+    const mapPoint = (joint: JointCoord) => mapJointToCanvas(joint, letterbox);
 
     const rawPose = getJointsForProgress(progress, keyframes);
     const pose = {
@@ -517,8 +558,8 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     ctx.arc(pose.head.x, pose.head.y, 10, 0, Math.PI * 2);
     ctx.fill();
 
-    // Glowing YOLO Skeleton Overlay
-    if (showSkeleton) {
+    // Glowing YOLO Skeleton Overlay (only when real scan data is available)
+    if (showSkeleton && (isLiveYoloScan || !videoUrl)) {
       ctx.shadowBlur = 10;
       ctx.shadowColor = 'rgba(0, 255, 128, 0.8)';
       ctx.lineWidth = 2;
@@ -615,7 +656,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     }
 
     // Biomechanical Joint Angle Calculator (Overlay)
-    if (showAngles) {
+    if (showAngles && (isLiveYoloScan || !videoUrl)) {
       const lKneeAngle = calculateAngle(pose.hips, pose.lKnee, pose.lFoot);
       const rKneeAngle = calculateAngle(pose.hips, pose.rKnee, pose.rFoot);
       const lHipAngle = calculateAngle(pose.shoulders, pose.hips, pose.lKnee);
@@ -670,7 +711,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     }
 
     ctx.shadowBlur = 0;
-  }, [progress, showSkeleton, showAngles, drawings, isDrawing, startPoint, currentPoint, activeTool, videoUrl]);
+  }, [progress, showSkeleton, showAngles, drawings, isDrawing, startPoint, currentPoint, activeTool, videoUrl, keyframes, videoReady, isLiveYoloScan]);
 
   // ------------------------------------------------------------------
   // 2. Draw loop for PGA Pro Sync Reference Canvas
@@ -966,6 +1007,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
               ref={videoRef}
               src={videoUrl}
               onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleVideoReady}
               className="absolute inset-0 w-full h-full object-contain"
               muted
               playsInline
@@ -984,8 +1026,25 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
           />
           {/* Label Tag */}
           <div className="absolute top-3 right-3 px-2 py-0.5 rounded bg-blue-600/90 text-[9px] font-bold text-white uppercase tracking-wider shadow-md backdrop-blur-sm">
-            Your Swing
+            {isLiveYoloScan ? 'YOLO Live Scan' : 'Your Swing'}
           </div>
+          {!isLiveYoloScan && videoUrl && (
+            <div className="absolute bottom-3 left-3 right-3 px-2 py-2 rounded bg-amber-500/90 text-[10px] font-medium text-white text-center backdrop-blur-sm space-y-1.5">
+              <p>Scan YOLO belum akurat. Upload ulang atau scan ulang video ini.</p>
+              <button
+                type="button"
+                disabled={reanalyzing}
+                onClick={async () => {
+                  setReanalyzing(true);
+                  await reanalyzeVideo(videoId);
+                  setReanalyzing(false);
+                }}
+                className="px-3 py-1 rounded bg-white/20 hover:bg-white/30 text-[10px] font-bold disabled:opacity-50"
+              >
+                {reanalyzing ? 'Scanning...' : 'Scan Ulang YOLO'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* PANEL 2: PGA PRO Sync REFERENCE VIEW */}

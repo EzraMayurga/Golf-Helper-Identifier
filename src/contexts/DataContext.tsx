@@ -24,6 +24,7 @@ interface DataContextType {
   isBackendConnected: boolean;
   refreshData: () => Promise<void>;
   syncVideoAnalysis: (videoId: string) => Promise<boolean>;
+  reanalyzeVideo: (videoId: string) => Promise<boolean>;
   
   // CRUD Actions
   uploadVideo: (title: string, file: File | null, duration?: number) => Promise<{ success: boolean; videoId?: string }>;
@@ -168,6 +169,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return false;
     }
   }, []);
+
+  const reanalyzeVideo = useCallback(async (videoId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/videos/${videoId}/reanalyze`, {
+        method: 'POST',
+      });
+      if (!response.ok) return false;
+      await fetchAllData();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [fetchAllData]);
 
   useEffect(() => {
     fetchAllData();
@@ -662,6 +676,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isBackendConnected,
       refreshData: fetchAllData,
       syncVideoAnalysis,
+      reanalyzeVideo,
       uploadVideo, 
       deleteVideo, 
       addFeedback, 
