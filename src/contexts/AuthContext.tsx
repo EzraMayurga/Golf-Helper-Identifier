@@ -7,6 +7,7 @@ const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   adminLogin: (email: string, password: string) => Promise<boolean>;
   register: (name: string, email: string, password: string, role: UserRole) => Promise<boolean>;
@@ -27,6 +28,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const saved = localStorage.getItem('golf_user');
     return saved ? JSON.parse(saved) : null;
   });
+  const [isLoading, setIsLoading] = useState(true);
+
+  React.useEffect(() => {
+    // Initialize auth state from localStorage
+    const saved = localStorage.getItem('golf_user');
+    if (saved) {
+      try {
+        setUser(JSON.parse(saved));
+      } catch (e) {
+        console.warn('Failed to parse saved user:', e);
+        localStorage.removeItem('golf_user');
+      }
+    }
+    setIsLoading(false);
+  }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     try {
@@ -139,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, adminLogin, register, logout, switchRole }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, adminLogin, register, logout, switchRole }}>
       {children}
     </AuthContext.Provider>
   );

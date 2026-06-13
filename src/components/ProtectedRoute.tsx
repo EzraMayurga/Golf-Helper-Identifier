@@ -9,7 +9,11 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
 
   if (!isAuthenticated) {
     if (allowedRoles && allowedRoles.includes('admin') && !allowedRoles.includes('player') && !allowedRoles.includes('coach')) {
