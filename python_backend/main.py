@@ -1,4 +1,6 @@
+import json
 import os
+import subprocess
 import cv2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +34,48 @@ class AnalyzeRequest(BaseModel):
 
 MAX_SAMPLES = 24
 INFER_IMGSZ = 512
+
+
+def get_video_rotation(video_path):
+    try:
+        out = subprocess.check_output(
+            [
+                'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                '-show_streams', video_path,
+            ],
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+        for stream in json.loads(out).get('streams', []):
+            if stream.get('codec_type') != 'video':
+                continue
+            tags = stream.get('tags') or {}
+            if 'rotate' in tags:
+                return int(tags['rotate']) % 360
+            for side in stream.get('side_data_list') or []:
+                if side.get('rotation') is not None:
+                    return int(side['rotation']) % 360
+        return 0
+    except Exception:
+        return 0
+
+
+def apply_rotation(frame, rotation):
+    rot = rotation % 360
+    if rot == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if rot == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if rot in (270, -90):
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return frame
+
+
+def display_dimensions(frame_w, frame_h, rotation):
+    rot = abs(rotation) % 360
+    if rot in (90, 270):
+        return frame_h, frame_w
+    return frame_w, frame_h
 
 
 def select_person_keypoints(result, frame_h, frame_w, prev_center=None):
@@ -193,8 +237,10 @@ async def analyze_video(req: AnalyzeRequest):
 
     cap = cv2.VideoCapture(req.video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
-    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
+    raw_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+    raw_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
+    rotation = get_video_rotation(req.video_path)
+    display_w, display_h = display_dimensions(raw_w, raw_h, rotation)
 
     if total_frames <= 0:
         cap.release()
@@ -216,6 +262,7 @@ async def analyze_video(req: AnalyzeRequest):
         if not ret:
             continue
 
+        frame = apply_rotation(frame, rotation)
         h, w = frame.shape[:2]
         results = model(frame, verbose=False, conf=0.2, iou=0.5, imgsz=INFER_IMGSZ)
 
@@ -261,8 +308,9 @@ async def analyze_video(req: AnalyzeRequest):
         "poseKeyframes": keyframes_data,
         "swingScore": swing_score,
         "injuryRiskScore": injury_risk,
-        "videoWidth": frame_w,
-        "videoHeight": frame_h,
+        "videoWidth": display_w,
+        "videoHeight": display_h,
+        "videoRotation": rotation,
     }
 
 

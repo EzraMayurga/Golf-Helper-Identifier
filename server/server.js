@@ -188,6 +188,9 @@ async function triggerAIAnalysis(videoId, playerId) {
         keypointsDetected: 33,
         poseKeyframes: result.poseKeyframes,
         poseSource: 'yolo',
+        videoWidth: result.videoWidth,
+        videoHeight: result.videoHeight,
+        videoRotation: result.videoRotation ?? 0,
         createdAt: new Date().toISOString().split('T')[0]
       };
       

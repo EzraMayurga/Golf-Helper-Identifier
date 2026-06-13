@@ -145,7 +145,11 @@ const isFakeFallbackKeyframes = (kfs: unknown): boolean => {
   if (!Array.isArray(kfs) || kfs.length === 0) return false;
   const head = (kfs[0] as { head?: JointCoord })?.head;
   if (!head) return false;
-  return Math.abs(head.x - 200) < 25 && Math.abs(head.y - 80) < 25 && kfs.length <= 6;
+  if (Math.abs(head.x - 200) < 25 && Math.abs(head.y - 80) < 25 && kfs.length <= 6) return true;
+  if (head.x <= 1 && head.y <= 1 && Math.abs(head.x - 0.5) < 0.08 && Math.abs(head.y - 0.27) < 0.08 && kfs.length <= 6) {
+    return true;
+  }
+  return false;
 };
 
 export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swingScore = 80 }) => {
@@ -251,8 +255,14 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   
   const rawKeyframes = (analysisItem as any)?.poseKeyframes;
   const poseSource = (analysisItem as any)?.poseSource as string | undefined;
+  const analysisVideoW = (analysisItem as any)?.videoWidth as number | undefined;
+  const analysisVideoH = (analysisItem as any)?.videoHeight as number | undefined;
   const hasYoloKeyframes = Array.isArray(rawKeyframes) && rawKeyframes.length > 0 && !isFakeFallbackKeyframes(rawKeyframes);
-  const keyframes = hasYoloKeyframes ? rawKeyframes : defaultKeyframes;
+  const keyframes = hasYoloKeyframes
+    ? rawKeyframes
+    : videoUrl
+      ? []
+      : defaultKeyframes;
   const isLiveYoloScan = hasYoloKeyframes && poseSource !== 'fallback';
 
   useEffect(() => {
@@ -340,9 +350,23 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   };
 
   // Get active joint positions for the current progress
-  const getJointsForProgress = (p: number, dataKeyframes: typeof keyframes) => {
+  const getJointsForProgress = (p: number, dataKeyframes: typeof keyframes, allowDemoFallback = true) => {
     if (!dataKeyframes || dataKeyframes.length === 0) {
-      return getJointsForProgress(p, defaultKeyframes);
+      if (allowDemoFallback && !videoUrl) {
+        return getJointsForProgress(p, defaultKeyframes, false);
+      }
+      return {
+        phase: 'address',
+        head: { x: 0, y: 0 },
+        shoulders: { x: 0, y: 0 },
+        hips: { x: 0, y: 0 },
+        lKnee: { x: 0, y: 0 },
+        lFoot: { x: 0, y: 0 },
+        rKnee: { x: 0, y: 0 },
+        rFoot: { x: 0, y: 0 },
+        wrists: { x: 0, y: 0 },
+        clubHead: { x: 0, y: 0 },
+      };
     }
 
     let startIndex = 0;
@@ -458,6 +482,9 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     showAngles,
     keyframes,
     videoUrl,
+    isLiveYoloScan,
+    analysisVideoW: 0,
+    analysisVideoH: 0,
     drawings,
     isDrawing,
     startPoint,
@@ -469,6 +496,9 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     showAngles,
     keyframes,
     videoUrl,
+    isLiveYoloScan,
+    analysisVideoW: analysisVideoW || 0,
+    analysisVideoH: analysisVideoH || 0,
     drawings,
     isDrawing,
     startPoint,
@@ -518,8 +548,8 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
       const letterbox = computeVideoLetterbox(
         canvas.width,
         canvas.height,
-        video?.videoWidth || 0,
-        video?.videoHeight || 0
+        ds.analysisVideoW || video?.videoWidth || 0,
+        ds.analysisVideoH || video?.videoHeight || 0
       );
       const mapPoint = (joint: JointCoord) => mapJointToCanvas(joint, letterbox);
 
@@ -527,7 +557,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
         ? (video.currentTime / video.duration) * 100
         : progressRef.current;
 
-      const rawPose = getJointsForProgress(currentProgress, ds.keyframes);
+      const rawPose = getJointsForProgress(currentProgress, ds.keyframes, !ds.videoUrl);
       const pose = {
         phase: rawPose.phase,
         head: mapPoint(rawPose.head),
@@ -541,7 +571,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
         clubHead: mapPoint(rawPose.clubHead),
       };
 
-      if (ds.showSkeleton) {
+      if (ds.showSkeleton && (ds.isLiveYoloScan || !ds.videoUrl)) {
         ctx.shadowBlur = 10;
         ctx.shadowColor = 'rgba(0, 255, 128, 0.8)';
         ctx.lineWidth = 3;
@@ -590,8 +620,8 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
         ctx.stroke();
       }
 
-      if (currentProgress >= 65 && ds.showSkeleton) {
-        const impactRaw = getJointsForProgress(65, ds.keyframes);
+      if (currentProgress >= 65 && ds.showSkeleton && (ds.isLiveYoloScan || !ds.videoUrl)) {
+        const impactRaw = getJointsForProgress(65, ds.keyframes, !ds.videoUrl);
         const impactClub = mapPoint(impactRaw.clubHead);
         const flightProgress = Math.min(1, (currentProgress - 65) / 35);
         const ballEndX = impactClub.x + 120;
@@ -619,7 +649,7 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
         ctx.shadowBlur = 0;
       }
 
-      if (ds.showAngles && ds.showSkeleton) {
+      if (ds.showAngles && ds.showSkeleton && (ds.isLiveYoloScan || !ds.videoUrl)) {
         const lKneeAngle = calculateAngle(pose.hips, pose.lKnee, pose.lFoot);
         const rKneeAngle = calculateAngle(pose.hips, pose.rKnee, pose.rFoot);
         const lHipAngle = calculateAngle(pose.shoulders, pose.hips, pose.lKnee);
