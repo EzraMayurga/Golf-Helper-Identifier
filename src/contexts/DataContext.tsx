@@ -196,7 +196,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const interval = window.setInterval(() => {
       fetchAllData();
-    }, 3000);
+    }, 5000);
 
     return () => window.clearInterval(interval);
   }, [videos, fetchAllData]);

@@ -175,6 +175,8 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   const [currentPoint, setCurrentPoint] = useState<{ x: number; y: number } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const progressRef = useRef(0);
+  const lastSliderUpdateRef = useRef(0);
 
   // ------------------------------------------------------------------
   // 5 standard swing phases keyframes coordinates (Fallback)
@@ -405,7 +407,13 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video || !video.duration) return;
-    setProgress((video.currentTime / video.duration) * 100);
+    const p = (video.currentTime / video.duration) * 100;
+    progressRef.current = p;
+    const now = Date.now();
+    if (now - lastSliderUpdateRef.current > 120) {
+      setProgress(p);
+      lastSliderUpdateRef.current = now;
+    }
   };
 
   const handleProgressChange = (newProgress: number) => {
@@ -444,274 +452,226 @@ export const YoloSwingPlayer: React.FC<YoloSwingPlayerProps> = ({ videoId, swing
     return () => cancelAnimationFrame(animFrame);
   }, [isPlaying, speed, videoUrl]);
 
-  // ------------------------------------------------------------------
-  // 1. Draw loop for User's Swing Canvas
-  // ------------------------------------------------------------------
+  // Canvas draw loop — rAF for smooth playback without React re-render lag
+  const drawStateRef = useRef({
+    showSkeleton,
+    showAngles,
+    keyframes,
+    videoUrl,
+    drawings,
+    isDrawing,
+    startPoint,
+    currentPoint,
+    activeTool,
+  });
+  drawStateRef.current = {
+    showSkeleton,
+    showAngles,
+    keyframes,
+    videoUrl,
+    drawings,
+    isDrawing,
+    startPoint,
+    currentPoint,
+    activeTool,
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    let rafId = 0;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw golf grid backdrop (ONLY if no real videoUrl is present)
-    if (!videoUrl) {
-      ctx.fillStyle = 'hsl(150,15%,5%)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-      ctx.lineWidth = 1;
-      for (let x = 0; x < canvas.width; x += 30) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < canvas.height; y += 30) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
+    const draw = () => {
+      const ctx = canvas.getContext('2d');
+      const video = videoRef.current;
+      if (!ctx) {
+        rafId = requestAnimationFrame(draw);
+        return;
       }
 
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(195, 220, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+      const ds = drawStateRef.current;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // --- Letterbox alignment for object-contain video ---
-    const video = videoRef.current;
-    const letterbox = computeVideoLetterbox(
-      canvas.width,
-      canvas.height,
-      video?.videoWidth || 0,
-      video?.videoHeight || 0
-    );
-
-    const mapPoint = (joint: JointCoord) => mapJointToCanvas(joint, letterbox);
-
-    const rawPose = getJointsForProgress(progress, keyframes);
-    const pose = {
-      phase: rawPose.phase,
-      head: mapPoint(rawPose.head),
-      shoulders: mapPoint(rawPose.shoulders),
-      hips: mapPoint(rawPose.hips),
-      lKnee: mapPoint(rawPose.lKnee),
-      lFoot: mapPoint(rawPose.lFoot),
-      rKnee: mapPoint(rawPose.rKnee),
-      rFoot: mapPoint(rawPose.rFoot),
-      wrists: mapPoint(rawPose.wrists),
-      clubHead: mapPoint(rawPose.clubHead)
-    };
-
-    // Draw standard vector body outlines
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'hsl(150,10%,30%)';
-
-    // Left Leg
-    ctx.beginPath();
-    ctx.moveTo(pose.hips.x, pose.hips.y);
-    ctx.lineTo(pose.lKnee.x, pose.lKnee.y);
-    ctx.lineTo(pose.lFoot.x, pose.lFoot.y);
-    ctx.stroke();
-
-    // Right Leg
-    ctx.beginPath();
-    ctx.moveTo(pose.hips.x, pose.hips.y);
-    ctx.lineTo(pose.rKnee.x, pose.rKnee.y);
-    ctx.lineTo(pose.rFoot.x, pose.rFoot.y);
-    ctx.stroke();
-
-    // Torso
-    ctx.beginPath();
-    ctx.moveTo(pose.hips.x, pose.hips.y);
-    ctx.lineTo(pose.shoulders.x, pose.shoulders.y);
-    ctx.stroke();
-
-    // Arms
-    ctx.beginPath();
-    ctx.moveTo(pose.shoulders.x, pose.shoulders.y);
-    ctx.lineTo(pose.wrists.x, pose.wrists.y);
-    ctx.stroke();
-
-    // Club Shaft
-    ctx.strokeStyle = '#d1d5db';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(pose.wrists.x, pose.wrists.y);
-    ctx.lineTo(pose.clubHead.x, pose.clubHead.y);
-    ctx.stroke();
-
-    // Club Head
-    ctx.fillStyle = '#4b5563';
-    ctx.beginPath();
-    ctx.arc(pose.clubHead.x, pose.clubHead.y, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Head
-    ctx.fillStyle = 'hsl(150,10%,40%)';
-    ctx.beginPath();
-    ctx.arc(pose.head.x, pose.head.y, 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Glowing YOLO Skeleton Overlay (only when real scan data is available)
-    if (showSkeleton && (isLiveYoloScan || !videoUrl)) {
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = 'rgba(0, 255, 128, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#00ff80'; // Neon green
-
-      ctx.beginPath();
-      ctx.moveTo(pose.head.x, pose.head.y);
-      ctx.lineTo(pose.shoulders.x, pose.shoulders.y);
-      ctx.moveTo(pose.shoulders.x, pose.shoulders.y);
-      ctx.lineTo(pose.hips.x, pose.hips.y);
-      ctx.moveTo(pose.hips.x, pose.hips.y);
-      ctx.lineTo(pose.lKnee.x, pose.lKnee.y);
-      ctx.lineTo(pose.lFoot.x, pose.lFoot.y);
-      ctx.moveTo(pose.hips.x, pose.hips.y);
-      ctx.lineTo(pose.rKnee.x, pose.rKnee.y);
-      ctx.lineTo(pose.rFoot.x, pose.rFoot.y);
-      ctx.moveTo(pose.shoulders.x, pose.shoulders.y);
-      ctx.lineTo(pose.wrists.x, pose.wrists.y);
-      ctx.stroke();
-
-      ctx.strokeStyle = '#fbbf24'; // Neon Gold club trace
-      ctx.beginPath();
-      ctx.moveTo(pose.wrists.x, pose.wrists.y);
-      ctx.lineTo(pose.clubHead.x, pose.clubHead.y);
-      ctx.stroke();
-
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#ff3366'; // Glowing keypoint nodes
-
-      const joints = [
-        pose.head, pose.shoulders, pose.hips,
-        pose.lKnee, pose.lFoot, pose.rKnee, pose.rFoot,
-        pose.wrists
-      ];
-
-      joints.forEach((joint) => {
-        ctx.fillStyle = '#ff3366';
+      if (!ds.videoUrl) {
+        ctx.fillStyle = 'hsl(150,15%,5%)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < canvas.width; x += 30) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+        for (let y = 0; y < canvas.height; y += 30) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(joint.x, joint.y, 4, 0, Math.PI * 2);
+        ctx.arc(195, 220, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const letterbox = computeVideoLetterbox(
+        canvas.width,
+        canvas.height,
+        video?.videoWidth || 0,
+        video?.videoHeight || 0
+      );
+      const mapPoint = (joint: JointCoord) => mapJointToCanvas(joint, letterbox);
+
+      const currentProgress = video?.duration
+        ? (video.currentTime / video.duration) * 100
+        : progressRef.current;
+
+      const rawPose = getJointsForProgress(currentProgress, ds.keyframes);
+      const pose = {
+        phase: rawPose.phase,
+        head: mapPoint(rawPose.head),
+        shoulders: mapPoint(rawPose.shoulders),
+        hips: mapPoint(rawPose.hips),
+        lKnee: mapPoint(rawPose.lKnee),
+        lFoot: mapPoint(rawPose.lFoot),
+        rKnee: mapPoint(rawPose.rKnee),
+        rFoot: mapPoint(rawPose.rFoot),
+        wrists: mapPoint(rawPose.wrists),
+        clubHead: mapPoint(rawPose.clubHead),
+      };
+
+      if (ds.showSkeleton) {
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'rgba(0, 255, 128, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#00ff80';
+
+        ctx.beginPath();
+        ctx.moveTo(pose.head.x, pose.head.y);
+        ctx.lineTo(pose.shoulders.x, pose.shoulders.y);
+        ctx.lineTo(pose.hips.x, pose.hips.y);
+        ctx.lineTo(pose.lKnee.x, pose.lKnee.y);
+        ctx.lineTo(pose.lFoot.x, pose.lFoot.y);
+        ctx.moveTo(pose.hips.x, pose.hips.y);
+        ctx.lineTo(pose.rKnee.x, pose.rKnee.y);
+        ctx.lineTo(pose.rFoot.x, pose.rFoot.y);
+        ctx.moveTo(pose.shoulders.x, pose.shoulders.y);
+        ctx.lineTo(pose.wrists.x, pose.wrists.y);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(pose.wrists.x, pose.wrists.y);
+        ctx.lineTo(pose.clubHead.x, pose.clubHead.y);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        const joints = [pose.head, pose.shoulders, pose.hips, pose.lKnee, pose.lFoot, pose.rKnee, pose.rFoot, pose.wrists];
+        joints.forEach((joint) => {
+          ctx.fillStyle = '#ff3366';
+          ctx.beginPath();
+          ctx.arc(joint.x, joint.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath();
+        ctx.arc(pose.clubHead.x, pose.clubHead.y, 6, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.stroke();
+      }
+
+      if (currentProgress >= 65 && ds.showSkeleton) {
+        const impactRaw = getJointsForProgress(65, ds.keyframes);
+        const impactClub = mapPoint(impactRaw.clubHead);
+        const flightProgress = Math.min(1, (currentProgress - 65) / 35);
+        const ballEndX = impactClub.x + 120;
+        const ballEndY = impactClub.y - 80;
+        const ctrlX = impactClub.x + 50;
+        const ctrlY = impactClub.y - 100;
+        const ballX = Math.pow(1 - flightProgress, 2) * impactClub.x + 2 * (1 - flightProgress) * flightProgress * ctrlX + Math.pow(flightProgress, 2) * ballEndX;
+        const ballY = Math.pow(1 - flightProgress, 2) * impactClub.y + 2 * (1 - flightProgress) * flightProgress * ctrlY + Math.pow(flightProgress, 2) * ballEndY;
+
+        ctx.beginPath();
+        ctx.moveTo(impactClub.x, impactClub.y);
+        ctx.quadraticCurveTo(ctrlX, ctrlY, ballX, ballY);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#00ffff';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      if (ds.showAngles && ds.showSkeleton) {
+        const lKneeAngle = calculateAngle(pose.hips, pose.lKnee, pose.lFoot);
+        const rKneeAngle = calculateAngle(pose.hips, pose.rKnee, pose.rFoot);
+        const lHipAngle = calculateAngle(pose.shoulders, pose.hips, pose.lKnee);
+        drawAngleArc(ctx, pose.hips, pose.lKnee, pose.lFoot, lKneeAngle, '#00ff80');
+        drawAngleArc(ctx, pose.hips, pose.rKnee, pose.rFoot, rKneeAngle, '#00ff80');
+        drawAngleArc(ctx, pose.shoulders, pose.hips, pose.lKnee, lHipAngle, '#fbbf24');
+      }
+
+      ctx.shadowBlur = 8;
+      ds.drawings.forEach((shape) => {
+        ctx.strokeStyle = shape.color;
+        ctx.shadowColor = shape.color;
+        ctx.lineWidth = 3;
+        if (shape.type === 'line') {
+          ctx.beginPath();
+          ctx.moveTo(shape.startX, shape.startY);
+          ctx.lineTo(shape.endX, shape.endY);
+          ctx.stroke();
+        } else if (shape.type === 'circle') {
+          const dx = shape.endX - shape.startX;
+          const dy = shape.endY - shape.startY;
+          ctx.beginPath();
+          ctx.arc(shape.startX, shape.startY, Math.sqrt(dx * dx + dy * dy), 0, Math.PI * 2);
+          ctx.stroke();
+        }
       });
 
-      ctx.fillStyle = '#fbbf24';
-      ctx.beginPath();
-      ctx.arc(pose.clubHead.x, pose.clubHead.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
-    }
+      if (ds.isDrawing && ds.startPoint && ds.currentPoint) {
+        ctx.strokeStyle = 'rgba(255, 51, 102, 0.9)';
+        ctx.shadowColor = 'rgba(255, 51, 102, 0.9)';
+        ctx.lineWidth = 3;
+        if (ds.activeTool === 'line') {
+          ctx.beginPath();
+          ctx.moveTo(ds.startPoint.x, ds.startPoint.y);
+          ctx.lineTo(ds.currentPoint.x, ds.currentPoint.y);
+          ctx.stroke();
+        } else if (ds.activeTool === 'circle') {
+          const dx = ds.currentPoint.x - ds.startPoint.x;
+          const dy = ds.currentPoint.y - ds.startPoint.y;
+          ctx.beginPath();
+          ctx.arc(ds.startPoint.x, ds.startPoint.y, Math.sqrt(dx * dx + dy * dy), 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
 
-    // Dynamic Ball Flight Trajectory Tracking
-    if (progress >= 65) {
-      // Impact is at frame 65
-      const impactRaw = getJointsForProgress(65, keyframes);
-      const impactClub = mapPoint(impactRaw.clubHead);
-      
-      const flightProgress = Math.min(1, (progress - 65) / 35); // 0 to 1
-      
-      // Calculate realistic ball trajectory (parabolic)
-      const ballEndX = impactClub.x + 200; // Ball travels forward
-      const ballEndY = impactClub.y - 120; // Ball travels up
-      const ctrlX = impactClub.x + 80;
-      const ctrlY = impactClub.y - 150;
-      
-      const ballX = Math.pow(1 - flightProgress, 2) * impactClub.x + 
-                    2 * (1 - flightProgress) * flightProgress * ctrlX + 
-                    Math.pow(flightProgress, 2) * ballEndX;
-                    
-      const ballY = Math.pow(1 - flightProgress, 2) * impactClub.y + 
-                    2 * (1 - flightProgress) * flightProgress * ctrlY + 
-                    Math.pow(flightProgress, 2) * ballEndY;
-                    
-      // Trace Line
-      ctx.beginPath();
-      ctx.moveTo(impactClub.x, impactClub.y);
-      ctx.quadraticCurveTo(ctrlX, ctrlY, ballX, ballY);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.setLineDash([5, 5]);
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.setLineDash([]);
-      
-      // Glowing Golf Ball
-      ctx.beginPath();
-      ctx.arc(ballX, ballY, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowBlur = 12;
-      ctx.shadowColor = '#00ffff';
-      ctx.fill();
       ctx.shadowBlur = 0;
-    }
+      rafId = requestAnimationFrame(draw);
+    };
 
-    // Biomechanical Joint Angle Calculator (Overlay)
-    if (showAngles && (isLiveYoloScan || !videoUrl)) {
-      const lKneeAngle = calculateAngle(pose.hips, pose.lKnee, pose.lFoot);
-      const rKneeAngle = calculateAngle(pose.hips, pose.rKnee, pose.rFoot);
-      const lHipAngle = calculateAngle(pose.shoulders, pose.hips, pose.lKnee);
-
-      drawAngleArc(ctx, pose.hips, pose.lKnee, pose.lFoot, lKneeAngle, '#00ff80');
-      drawAngleArc(ctx, pose.hips, pose.rKnee, pose.rFoot, rKneeAngle, '#00ff80');
-      drawAngleArc(ctx, pose.shoulders, pose.hips, pose.lKnee, lHipAngle, '#fbbf24');
-    }
-
-    // User drawn swing markups
-    ctx.shadowBlur = 8;
-    drawings.forEach((shape) => {
-      ctx.strokeStyle = shape.color;
-      ctx.fillStyle = shape.color;
-      ctx.shadowColor = shape.color;
-      ctx.lineWidth = 3;
-
-      if (shape.type === 'line') {
-        ctx.beginPath();
-        ctx.moveTo(shape.startX, shape.startY);
-        ctx.lineTo(shape.endX, shape.endY);
-        ctx.stroke();
-      } else if (shape.type === 'circle') {
-        const dx = shape.endX - shape.startX;
-        const dy = shape.endY - shape.startY;
-        const radius = Math.sqrt(dx * dx + dy * dy);
-        ctx.beginPath();
-        ctx.arc(shape.startX, shape.startY, radius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    });
-
-    // Active markup preview drawing
-    if (isDrawing && startPoint && currentPoint) {
-      ctx.strokeStyle = 'rgba(255, 51, 102, 0.9)';
-      ctx.shadowColor = 'rgba(255, 51, 102, 0.9)';
-      ctx.lineWidth = 3;
-
-      if (activeTool === 'line') {
-        ctx.beginPath();
-        ctx.moveTo(startPoint.x, startPoint.y);
-        ctx.lineTo(currentPoint.x, currentPoint.y);
-        ctx.stroke();
-      } else if (activeTool === 'circle') {
-        const dx = currentPoint.x - startPoint.x;
-        const dy = currentPoint.y - startPoint.y;
-        const radius = Math.sqrt(dx * dx + dy * dy);
-        ctx.beginPath();
-        ctx.arc(startPoint.x, startPoint.y, radius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-
-    ctx.shadowBlur = 0;
-  }, [progress, showSkeleton, showAngles, drawings, isDrawing, startPoint, currentPoint, activeTool, videoUrl, keyframes, videoReady, isLiveYoloScan]);
+    rafId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafId);
+  }, [videoReady, videoUrl, keyframes]);
 
   // ------------------------------------------------------------------
   // 2. Draw loop for PGA Pro Sync Reference Canvas

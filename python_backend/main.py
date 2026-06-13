@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
 import torch
 
-# Bypass PyTorch 2.6 breaking change for older Ultralytics weights
 original_load = torch.load
 def safe_load(*args, **kwargs):
     kwargs['weights_only'] = False
@@ -31,14 +30,18 @@ from pydantic import BaseModel
 class AnalyzeRequest(BaseModel):
     video_path: str
 
+MAX_SAMPLES = 24
+INFER_IMGSZ = 512
+
 
 def select_person_keypoints(result, frame_h, frame_w, prev_center=None):
-    """Pick the golfer: largest visible person, with temporal tracking across frames."""
     if result.keypoints is None or result.keypoints.xy.numel() == 0:
         return None, None, None
 
     xy = result.keypoints.xy
     conf = result.keypoints.conf
+    boxes = result.boxes
+
     best_idx = None
     best_score = float('-inf')
     best_center = None
@@ -50,10 +53,10 @@ def select_person_keypoints(result, frame_h, frame_w, prev_center=None):
         valid = []
         for j, (x, y) in enumerate(kpts):
             c = float(kpt_conf[j]) if kpt_conf is not None else 1.0
-            if c >= 0.25 and x > 1 and y > 1:
-                valid.append((x, y))
+            if c >= 0.15 and x > 0 and y > 0:
+                valid.append((float(x), float(y)))
 
-        if len(valid) < 5:
+        if len(valid) < 4:
             continue
 
         xs = [p[0] for p in valid]
@@ -62,21 +65,29 @@ def select_person_keypoints(result, frame_h, frame_w, prev_center=None):
         ymin, ymax = min(ys), max(ys)
         bw, bh = xmax - xmin, ymax - ymin
 
-        if bw < frame_w * 0.08 or bh < frame_h * 0.15:
+        if boxes is not None and len(boxes) > i:
+            box = boxes.xyxy[i].cpu().numpy()
+            bw = float(box[2] - box[0])
+            bh = float(box[3] - box[1])
+            cx = float((box[0] + box[2]) / 2)
+            cy = float((box[1] + box[3]) / 2)
+        else:
+            cx, cy = (xmin + xmax) / 2, (ymin + ymax) / 2
+
+        if bw < frame_w * 0.06 or bh < frame_h * 0.10:
             continue
 
         area = bw * bh
-        cx, cy = (xmin + xmax) / 2, (ymin + ymax) / 2
-
         score = area
-        if frame_h * 0.12 < cy < frame_h * 0.92:
-            score *= 1.15
-        else:
-            score *= 0.4
+
+        if frame_h * 0.08 < cy < frame_h * 0.98:
+            score *= 1.2
 
         if prev_center is not None:
             dist = ((cx - prev_center[0]) ** 2 + (cy - prev_center[1]) ** 2) ** 0.5
-            score -= dist * 1.8
+            score -= dist * 1.5
+        else:
+            score += area * 0.1
 
         if score > best_score:
             best_score = score
@@ -90,8 +101,6 @@ def select_person_keypoints(result, frame_h, frame_w, prev_center=None):
 
 
 def build_frame_keypoints(kpts, kpt_conf, frame_w, frame_h, last_valid, phase, percentage):
-    """Map YOLO COCO keypoints to swing joints using normalized 0-1 coordinates."""
-
     def pt_conf(idx):
         if kpt_conf is None:
             return 1.0
@@ -99,9 +108,7 @@ def build_frame_keypoints(kpts, kpt_conf, frame_w, frame_h, last_valid, phase, p
 
     def norm(x, y, joint_name, idx_for_conf=None):
         c = pt_conf(idx_for_conf) if idx_for_conf is not None else 1.0
-        if x <= 1 and y <= 1:
-            return last_valid.get(joint_name)
-        if c < 0.25:
+        if x <= 0 or y <= 0 or c < 0.15:
             return last_valid.get(joint_name)
         val = {"x": round(float(x / frame_w), 4), "y": round(float(y / frame_h), 4)}
         last_valid[joint_name] = val
@@ -111,40 +118,62 @@ def build_frame_keypoints(kpts, kpt_conf, frame_w, frame_h, last_valid, phase, p
         x1, y1 = kpts[idx1][0], kpts[idx1][1]
         x2, y2 = kpts[idx2][0], kpts[idx2][1]
         c1, c2 = pt_conf(idx1), pt_conf(idx2)
-        if c1 < 0.25 and c2 < 0.25:
+        if c1 < 0.15 and c2 < 0.15:
             return last_valid.get(joint_name)
-        if c1 < 0.25:
+        if c1 < 0.15:
             return norm(x2, y2, joint_name, idx2)
-        if c2 < 0.25:
+        if c2 < 0.15:
             return norm(x1, y1, joint_name, idx1)
         return norm((x1 + x2) / 2, (y1 + y2) / 2, joint_name, idx1)
+
+    def fallback_from_hips(name, hips_pt, dx, dy):
+        if name in last_valid:
+            return last_valid[name]
+        if hips_pt:
+            return {"x": round(hips_pt["x"] + dx, 4), "y": round(hips_pt["y"] + dy, 4)}
+        return None
 
     head = norm(kpts[0][0], kpts[0][1], "head", 0)
     shoulders = avg_kpt(5, 6, "shoulders")
     hips = avg_kpt(11, 12, "hips")
-    l_knee = norm(kpts[13][0], kpts[13][1], "lKnee", 13)
-    r_knee = norm(kpts[14][0], kpts[14][1], "rKnee", 14)
-    l_foot = norm(kpts[15][0], kpts[15][1], "lFoot", 15)
-    r_foot = norm(kpts[16][0], kpts[16][1], "rFoot", 16)
-    wrists = avg_kpt(9, 10, "wrists")
 
-    required = [head, shoulders, hips, l_knee, r_knee, l_foot, r_foot, wrists]
-    if any(j is None for j in required):
+    if not head and not shoulders and not hips:
         return None
 
-    sx = shoulders["x"] * frame_w
-    sy = shoulders["y"] * frame_h
-    wx = wrists["x"] * frame_w
-    wy = wrists["y"] * frame_h
+    if not shoulders and head:
+        shoulders = {"x": head["x"], "y": min(head["y"] + 0.08, 0.95)}
+    if not hips and shoulders:
+        hips = {"x": shoulders["x"], "y": min(shoulders["y"] + 0.12, 0.95)}
+    if not head and shoulders:
+        head = {"x": shoulders["x"], "y": max(shoulders["y"] - 0.08, 0.02)}
+
+    l_knee = norm(kpts[13][0], kpts[13][1], "lKnee", 13) or fallback_from_hips("lKnee", hips, -0.03, 0.14)
+    r_knee = norm(kpts[14][0], kpts[14][1], "rKnee", 14) or fallback_from_hips("rKnee", hips, 0.03, 0.14)
+    l_foot = norm(kpts[15][0], kpts[15][1], "lFoot", 15) or fallback_from_hips("lFoot", l_knee, 0, 0.10)
+    r_foot = norm(kpts[16][0], kpts[16][1], "rFoot", 16) or fallback_from_hips("rFoot", r_knee, 0, 0.10)
+    wrists = avg_kpt(9, 10, "wrists") or (shoulders and {"x": shoulders["x"], "y": shoulders["y"] + 0.05})
+
+    if not hips or not shoulders or not wrists:
+        return None
+
+    sx, sy = shoulders["x"] * frame_w, shoulders["y"] * frame_h
+    wx, wy = wrists["x"] * frame_w, wrists["y"] * frame_h
     club_head = norm(wx + (wx - sx) * 0.65, wy + (wy - sy) * 0.65, "clubHead")
+    if not club_head:
+        club_head = {"x": round(wrists["x"] + 0.05, 4), "y": round(wrists["y"] + 0.08, 4)}
 
-    if club_head is None:
-        return None
+    for name, val in [
+        ("head", head), ("shoulders", shoulders), ("hips", hips),
+        ("lKnee", l_knee), ("rKnee", r_knee), ("lFoot", l_foot),
+        ("rFoot", r_foot), ("wrists", wrists), ("clubHead", club_head),
+    ]:
+        if val:
+            last_valid[name] = val
 
     return {
         "frame": float(percentage),
         "phase": phase,
-        "head": head,
+        "head": head or last_valid.get("head") or shoulders,
         "shoulders": shoulders,
         "hips": hips,
         "lKnee": l_knee,
@@ -172,11 +201,11 @@ async def analyze_video(req: AnalyzeRequest):
         return {"success": False, "message": "Invalid video file"}
 
     keyframes_data = []
-    num_samples = min(total_frames, 60)
-    target_frames = []
-    for i in range(num_samples):
-        idx = int(i * (total_frames - 1) / (num_samples - 1)) if num_samples > 1 else 0
-        target_frames.append(idx)
+    num_samples = min(total_frames, MAX_SAMPLES)
+    target_frames = [
+        int(i * (total_frames - 1) / (num_samples - 1)) if num_samples > 1 else 0
+        for i in range(num_samples)
+    ]
 
     last_valid = {}
     prev_center = None
@@ -188,7 +217,7 @@ async def analyze_video(req: AnalyzeRequest):
             continue
 
         h, w = frame.shape[:2]
-        results = model(frame, verbose=False, conf=0.25, iou=0.45, imgsz=640)
+        results = model(frame, verbose=False, conf=0.2, iou=0.5, imgsz=INFER_IMGSZ)
 
         percentage = (target / max(total_frames - 1, 1)) * 100
         if percentage < 20:
@@ -221,7 +250,7 @@ async def analyze_video(req: AnalyzeRequest):
     cap.release()
 
     if len(keyframes_data) < 2:
-        return {"success": False, "message": "Could not detect golfer pose in video. Ensure full body is visible."}
+        return {"success": False, "message": "Could not detect golfer pose. Pastikan seluruh tubuh terlihat dalam frame."}
 
     head_drift = abs(keyframes_data[0]["head"]["x"] - keyframes_data[-1]["head"]["x"]) * 100
     swing_score = max(50, min(98, int(100 - head_drift * 0.35)))
